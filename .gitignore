@@ -2,3 +2,5 @@ node_modules/
 bun.lockb
 *.lock
 .DS_Store
+
+.samples/
