@@ -39,8 +39,10 @@ pi -e git:github.com/hurricanehrndz/pi-ext
 After installing, activate a theme via `/settings` or `~/.pi/agent/settings.json`:
 
 ```json
-{ "theme": "rose-pine" }
+{ "theme": "catppuccin-latte" }
 ```
+
+Other available themes: `rose-pine`.
 
 ## Prerequisites
 
@@ -140,11 +142,13 @@ Once loaded, skills appear as `/skill:<name>` commands inside pi:
 | Name | Description |
 |------|-------------|
 | [rose-pine](themes/rose-pine.json) | Rosé Pine — soho vibes, muted base with rose, foam, iris, and gold accents |
+| [catppuccin-latte](themes/catppuccin-latte.json) | Catppuccin Latte — warm light theme with pastel mauve, blue, teal, and peach accents |
 
 ## Extensions
 
 | Name | Description |
 |------|-------------|
+| [custom-footer](extensions/custom-footer/index.ts) | Compact single-line footer: path + git branch, context usage, model and thinking level |
 | [permission-gate](extensions/permission-gate/index.ts) | Prompts for confirmation before running dangerous bash commands (`rm -rf`, `sudo`, `chmod/chown 777`) |
 | [protected-paths](extensions/protected-paths/index.ts) | Blocks `write` and `edit` tool calls to sensitive paths (`.env`, `.git/`, `node_modules/`) |
 | [persona](extensions/persona/index.ts) | Dynamically overrides the agent persona via `/persona <description>` — cleared with `/persona off` |
