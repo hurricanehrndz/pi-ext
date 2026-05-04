@@ -26,6 +26,22 @@ pi-ext/
 └── AGENTS.md            # AI agent coding guidelines
 ```
 
+## Install
+
+```bash
+# Install globally — all extensions, skills, and themes auto-discovered on every pi startup
+pi install git:github.com/hurricanehrndz/pi-ext
+
+# Try without installing (current run only)
+pi -e git:github.com/hurricanehrndz/pi-ext
+```
+
+After installing, activate a theme via `/settings` or `~/.pi/agent/settings.json`:
+
+```json
+{ "theme": "rose-pine" }
+```
+
 ## Prerequisites
 
 - [Bun](https://bun.sh) ≥ 1.0
@@ -35,7 +51,7 @@ pi-ext/
 
 ```bash
 # Clone the repo
-git clone https://github.com/chernand/pi-ext
+git clone https://github.com/hurricanehrndz/pi-ext
 cd pi-ext
 
 # Install dependencies
@@ -224,7 +240,7 @@ bun run scripts/main.ts <input>
 Install directly from git:
 
 ```bash
-pi install git:github.com/chernand/pi-ext
+pi install git:github.com/hurricanehrndz/pi-ext
 ```
 
 ## Tech stack
