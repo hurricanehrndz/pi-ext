@@ -1,6 +1,6 @@
 # pi-ext
 
-A one-stop shop for [pi.dev](https://pi.dev) **extensions** and **skills**, built with [Bun](https://bun.sh).
+A one-stop shop for [pi.dev](https://pi.dev) **extensions**, **skills**, and **prompts**, built with [Bun](https://bun.sh).
 
 ## What's in here
 
@@ -8,6 +8,7 @@ A one-stop shop for [pi.dev](https://pi.dev) **extensions** and **skills**, buil
 |-----------|---------|
 | `extensions/` | TypeScript extensions that extend pi's behavior (tools, commands, event hooks) |
 | `skills/` | Agent skill packages following the [Agent Skills standard](https://agentskills.io/specification) |
+| `prompts/` | Prompt templates you can symlink into `~/.pi/agent/prompts` |
 
 ## Repository layout
 
@@ -21,6 +22,8 @@ pi-ext/
 │   └── <name>/
 │       ├── SKILL.md     # Required: frontmatter + instructions
 │       └── ...
+├── prompts/             # reusable prompt templates
+│   └── <name>.md
 ├── package.json         # Bun workspace / package manifest
 ├── README.md
 └── AGENTS.md            # AI agent coding guidelines
@@ -43,6 +46,8 @@ After installing, activate a theme via `/settings` or `~/.pi/agent/settings.json
 ```
 
 Other available themes: `rose-pine`.
+
+Install repo prompts with `/install-my-prompts` to symlink `prompts/*.md` into `~/.pi/agent/prompts`.
 
 ## Prerequisites
 
@@ -137,6 +142,12 @@ Once loaded, skills appear as `/skill:<name>` commands inside pi:
 |------|-------------|
 | [commit](skills/commit/SKILL.md) | Creates Conventional Commits-style git commits from staged or specified changes |
 
+## Prompts
+
+| Name | Description |
+|------|-------------|
+| [review](prompts/review.md) | Reviews the current branch diff against the repository base branch with read-only `git diff` / `git log` / `git show` inspection |
+
 ## Themes
 
 | Name | Description |
@@ -152,6 +163,7 @@ Once loaded, skills appear as `/skill:<name>` commands inside pi:
 | [permission-gate](extensions/permission-gate/index.ts) | Prompts for confirmation before running dangerous bash commands (`rm -rf`, `sudo`, `chmod/chown 777`) |
 | [protected-paths](extensions/protected-paths/index.ts) | Blocks `write` and `edit` tool calls to sensitive paths (`.env`, `.git/`, `node_modules/`) |
 | [persona](extensions/persona/index.ts) | Dynamically overrides the agent persona via `/persona <description>` — cleared with `/persona off` |
+| [install-my-prompts](extensions/install-my-prompts/index.ts) | Symlinks the repo's `prompts/*.md` files into `~/.pi/agent/prompts` |
 | [system-prompt](extensions/system-prompt/index.ts) | Shows the current system prompt and tool list via `/system-prompt` |
 
 ## Creating a new extension

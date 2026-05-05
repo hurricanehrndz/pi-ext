@@ -42,7 +42,7 @@ export default function (pi: ExtensionAPI) {
 			}
 
 			activePersona = input;
-			ctx.ui.notify(`Persona set: ${activePersona}`, "success");
+			ctx.ui.notify(`Persona set: ${activePersona}`, "info");
 		},
 	});
 
