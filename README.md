@@ -149,6 +149,7 @@ Once loaded, skills appear as `/skill:<name>` commands inside pi:
 | Name | Description |
 |------|-------------|
 | [custom-footer](extensions/custom-footer/index.ts) | Compact single-line footer: path + git branch, context usage, model and thinking level |
+| [pi-docs-filter](extensions/pi-docs-filter/index.ts) | Removes the bundled Pi documentation guidance block from the system prompt when working in `pi-ext` |
 | [permission-gate](extensions/permission-gate/index.ts) | Prompts for confirmation before running dangerous bash commands (`rm -rf`, `sudo`, `chmod/chown 777`) |
 | [protected-paths](extensions/protected-paths/index.ts) | Blocks `write` and `edit` tool calls to sensitive paths (`.env`, `.git/`, `node_modules/`) |
 | [persona](extensions/persona/index.ts) | Dynamically overrides the agent persona via `/persona <description>` — cleared with `/persona off` |
