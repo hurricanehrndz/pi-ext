@@ -7,7 +7,10 @@ import os from "node:os";
 const EXTENSION_DIR = path.dirname(fileURLToPath(import.meta.url));
 const REPO_ROOT = path.resolve(EXTENSION_DIR, "../..");
 const PROMPTS_DIR = path.join(REPO_ROOT, "prompts");
-const TARGET_DIR = path.join(os.homedir(), ".pi", "agent", "prompts");
+const AGENT_DIR = path.join(os.homedir(), ".pi", "agent");
+const PROMPT_TARGET_DIR = path.join(AGENT_DIR, "prompts");
+const APPEND_SYSTEM_SOURCE = path.join(EXTENSION_DIR, "append-system.md");
+const APPEND_SYSTEM_TARGET = path.join(AGENT_DIR, "APPEND_SYSTEM.md");
 
 type PromptEntry = {
 	name: string;
@@ -23,7 +26,7 @@ async function getPromptEntries(): Promise<PromptEntry[]> {
 		.map((dirent) => ({
 			name: dirent.name,
 			source: path.join(PROMPTS_DIR, dirent.name),
-			target: path.join(TARGET_DIR, dirent.name),
+			target: path.join(PROMPT_TARGET_DIR, dirent.name),
 		}))
 		.sort((a, b) => a.name.localeCompare(b.name));
 }
@@ -38,9 +41,21 @@ async function pathExists(filePath: string): Promise<boolean> {
 	return await fs.lstat(filePath).then(() => true, () => false);
 }
 
+async function installSymlink(source: string, target: string): Promise<"installed" | "skipped"> {
+	const existingTarget = await resolveSymlinkTarget(target);
+	if (existingTarget === source) return "skipped";
+
+	if (await pathExists(target)) {
+		await fs.rm(target, { recursive: true, force: true });
+	}
+
+	await fs.symlink(source, target);
+	return "installed";
+}
+
 export default function (pi: ExtensionAPI) {
 	pi.registerCommand("install-my-prompts", {
-		description: "Symlink prompts from this repo into ~/.pi/agent/prompts",
+		description: "Symlink prompts and collaborative APPEND_SYSTEM.md into ~/.pi/agent",
 		handler: async (_args, ctx) => {
 			try {
 				const prompts = await getPromptEntries();
@@ -50,58 +65,22 @@ export default function (pi: ExtensionAPI) {
 					return;
 				}
 
-				await fs.mkdir(TARGET_DIR, { recursive: true });
-
-				const conflicts: string[] = [];
-				for (const prompt of prompts) {
-					if (!(await pathExists(prompt.target))) continue;
-
-					const existingTarget = await resolveSymlinkTarget(prompt.target);
-					if (existingTarget === prompt.source) continue;
-
-					conflicts.push(prompt.name);
-				}
-
-				if (conflicts.length > 0) {
-					if (!ctx.hasUI) {
-						ctx.ui.notify(
-							`Cannot replace existing prompts without UI confirmation: ${conflicts.join(", ")}`,
-							"error",
-						);
-						return;
-					}
-
-					const confirmed = await ctx.ui.confirm(
-						"Replace existing prompts?",
-						`This will replace ${conflicts.length} existing prompt(s): ${conflicts.join(", ")}`,
-					);
-
-					if (!confirmed) {
-						ctx.ui.notify("Cancelled", "info");
-						return;
-					}
-				}
+				await fs.mkdir(PROMPT_TARGET_DIR, { recursive: true });
+				await fs.mkdir(AGENT_DIR, { recursive: true });
 
 				let installed = 0;
 				let skipped = 0;
 
 				for (const prompt of prompts) {
-					const existingTarget = await resolveSymlinkTarget(prompt.target);
-					if (existingTarget === prompt.source) {
-						skipped += 1;
-						continue;
-					}
-
-					if (await pathExists(prompt.target)) {
-						await fs.rm(prompt.target, { recursive: true, force: true });
-					}
-
-					await fs.symlink(prompt.source, prompt.target);
-					installed += 1;
+					const status = await installSymlink(prompt.source, prompt.target);
+					if (status === "installed") installed += 1;
+					else skipped += 1;
 				}
 
+				const appendSystemStatus = await installSymlink(APPEND_SYSTEM_SOURCE, APPEND_SYSTEM_TARGET);
+
 				ctx.ui.notify(
-					`Installed ${installed} prompt(s) to ${TARGET_DIR}${skipped > 0 ? `, skipped ${skipped} already-linked prompt(s)` : ""}`,
+					`Installed ${installed} prompt(s) to ${PROMPT_TARGET_DIR}, ${appendSystemStatus} APPEND_SYSTEM.md to ${APPEND_SYSTEM_TARGET}${skipped > 0 ? `, skipped ${skipped} already-linked prompt(s)` : ""}`,
 					"info",
 				);
 			} catch (error) {
