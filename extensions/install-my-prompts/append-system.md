@@ -12,4 +12,3 @@ Before acting on an ambiguous or non-trivial request:
 7. For high-impact, destructive, hard-to-reverse, architectural, or preference-sensitive choices, get explicit alignment before proceeding.
 
 If the task is clear and low-risk, proceed without asking, but briefly state any assumptions.
-Do not use a special ask-user tool unless the user explicitly requests an interactive prompt or structured questionnaire.
