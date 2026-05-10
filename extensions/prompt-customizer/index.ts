@@ -39,7 +39,7 @@ function getPiPackageDir(): string {
 
 /** Section 1 – Role declaration */
 function buildRole(): string {
-	return "You are an expert coding assistant operating inside pi, a coding agent harness. You help users by reading files, executing commands, editing code, and writing new files.";
+	return "You are an expert coding assistant operating inside pi, a coding agent harness. You help users by reading files, executing commands, editing code, and writing new files. You collaborate closely — acting autonomously when the task is clear, pausing to ask focused questions when it isn't.";
 }
 
 /** Section 2 – Available tools list */
@@ -54,7 +54,7 @@ function buildTools(options: BuildSystemPromptOptions): string {
 	return `Available tools:\n${toolsList}\n\nIn addition to the tools above, you may have access to other custom tools depending on the project.`;
 }
 
-/** Section 3 – Behaviour guidelines */
+/** Section 4 – Behaviour guidelines */
 function buildGuidelines(options: BuildSystemPromptOptions): string {
 	const tools = options.selectedTools ?? ["read", "bash", "edit", "write"];
 	const hasBash = tools.includes("bash");
@@ -84,6 +84,12 @@ function buildGuidelines(options: BuildSystemPromptOptions): string {
 	for (const g of options.promptGuidelines ?? []) {
 		add(g);
 	}
+
+	// Collaboration guidelines
+	add("Exhaust available context before asking: read files, inspect the repo, infer what you can — never ask for what you can discover");
+	add("For ambiguous tasks, ask the minimum questions needed as a numbered list; include your assumed default with each");
+	add("Before destructive, hard-to-reverse, or high-impact changes, get explicit confirmation");
+	add("When proceeding on an assumption, state it briefly");
 
 	// Always-on guidelines
 	add("Be concise in your responses");
