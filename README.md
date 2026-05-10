@@ -47,7 +47,7 @@ After installing, activate a theme via `/settings` or `~/.pi/agent/settings.json
 
 Other available themes: `rose-pine`.
 
-Install repo prompts and collaborative agent guidance with `/install-my-prompts` to symlink `prompts/*.md` into `~/.pi/agent/prompts` and `extensions/install-my-prompts/append-system.md` into `~/.pi/agent/APPEND_SYSTEM.md`.
+Install repo prompts with `/install-my-prompts` to symlink `prompts/*.md` into `~/.pi/agent/prompts`.
 
 ## Prerequisites
 
@@ -163,7 +163,7 @@ Once loaded, skills appear as `/skill:<name>` commands inside pi:
 | [permission-gate](extensions/permission-gate/index.ts) | Prompts for confirmation before running dangerous bash commands (`rm -rf`, `sudo`, `chmod/chown 777`) |
 | [protected-paths](extensions/protected-paths/index.ts) | Blocks `write` and `edit` tool calls to sensitive paths (`.env`, `.git/`, `node_modules/`) |
 | [persona](extensions/persona/index.ts) | Dynamically overrides the agent persona via `/persona <description>` — cleared with `/persona off` |
-| [install-my-prompts](extensions/install-my-prompts/index.ts) | Symlinks the repo's `prompts/*.md` files and collaborative `APPEND_SYSTEM.md` guidance into `~/.pi/agent` |
+| [install-my-prompts](extensions/install-my-prompts/index.ts) | Symlinks `prompts/*.md` into `~/.pi/agent/prompts` |
 | [system-prompt](extensions/system-prompt/index.ts) | Shows the current system prompt and tool list via `/system-prompt` |
 | [prompt-customizer](extensions/prompt-customizer/index.ts) | Full control over the system prompt via `before_agent_start` — reproduces and exposes every default section for editing |
 

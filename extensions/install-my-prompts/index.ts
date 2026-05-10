@@ -9,8 +9,6 @@ const REPO_ROOT = path.resolve(EXTENSION_DIR, "../..");
 const PROMPTS_DIR = path.join(REPO_ROOT, "prompts");
 const AGENT_DIR = path.join(os.homedir(), ".pi", "agent");
 const PROMPT_TARGET_DIR = path.join(AGENT_DIR, "prompts");
-const APPEND_SYSTEM_SOURCE = path.join(EXTENSION_DIR, "append-system.md");
-const APPEND_SYSTEM_TARGET = path.join(AGENT_DIR, "APPEND_SYSTEM.md");
 
 type PromptEntry = {
 	name: string;
@@ -55,7 +53,7 @@ async function installSymlink(source: string, target: string): Promise<"installe
 
 export default function (pi: ExtensionAPI) {
 	pi.registerCommand("install-my-prompts", {
-		description: "Symlink prompts and collaborative APPEND_SYSTEM.md into ~/.pi/agent",
+		description: "Symlink prompts/*.md into ~/.pi/agent/prompts",
 		handler: async (_args, ctx) => {
 			try {
 				const prompts = await getPromptEntries();
@@ -66,7 +64,6 @@ export default function (pi: ExtensionAPI) {
 				}
 
 				await fs.mkdir(PROMPT_TARGET_DIR, { recursive: true });
-				await fs.mkdir(AGENT_DIR, { recursive: true });
 
 				let installed = 0;
 				let skipped = 0;
@@ -77,10 +74,8 @@ export default function (pi: ExtensionAPI) {
 					else skipped += 1;
 				}
 
-				const appendSystemStatus = await installSymlink(APPEND_SYSTEM_SOURCE, APPEND_SYSTEM_TARGET);
-
 				ctx.ui.notify(
-					`Installed ${installed} prompt(s) to ${PROMPT_TARGET_DIR}, ${appendSystemStatus} APPEND_SYSTEM.md to ${APPEND_SYSTEM_TARGET}${skipped > 0 ? `, skipped ${skipped} already-linked prompt(s)` : ""}`,
+					`Installed ${installed} prompt(s) to ${PROMPT_TARGET_DIR}${skipped > 0 ? `, skipped ${skipped} already-linked` : ""}`,
 					"info",
 				);
 			} catch (error) {
