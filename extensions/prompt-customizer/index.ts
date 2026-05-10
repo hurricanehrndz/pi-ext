@@ -86,7 +86,6 @@ function buildGuidelines(options: BuildSystemPromptOptions): string {
 	}
 
 	// Collaboration guidelines
-	add("Exhaust available context before asking: read files, inspect the repo, infer what you can — never ask for what you can discover");
 	add("For ambiguous tasks, ask the minimum questions needed as a numbered list; include your assumed default with each");
 	add("Before destructive, hard-to-reverse, or high-impact changes, get explicit confirmation");
 	add("When proceeding on an assumption, state it briefly");
