@@ -154,8 +154,8 @@ export default function promptCustomizer(pi: ExtensionAPI) {
 			buildTools(opts),
 			"",
 			buildGuidelines(opts),
-			"",
-			buildPiDocs(),
+			// "",
+			// buildPiDocs(),
 		].join("\n") +
 			buildAppend(opts) +
 			buildContextFiles(opts) +
