@@ -5,8 +5,8 @@
  * All colors are resolved via theme roles (no hardcoded ANSI).
  */
 
-import type { ThemeColor } from "@mariozechner/pi-coding-agent";
-import { visibleWidth } from "@mariozechner/pi-tui";
+import type { ThemeColor } from "@earendil-works/pi-coding-agent";
+import { visibleWidth } from "@earendil-works/pi-tui";
 
 // ── Tokens ─────────────────────────────────────────────────────────────
 

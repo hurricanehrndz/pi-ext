@@ -10,7 +10,7 @@
  *   - Falls back to sequential ctx.ui.input() when no TUI is available
  */
 
-import type { ExtensionAPI, Theme } from "@mariozechner/pi-coding-agent";
+import type { ExtensionAPI, Theme } from "@earendil-works/pi-coding-agent";
 import {
   Container,
   Editor,
@@ -21,7 +21,7 @@ import {
   Text,
   truncateToWidth,
   wrapTextWithAnsi,
-} from "@mariozechner/pi-tui";
+} from "@earendil-works/pi-tui";
 import { Type } from "typebox";
 
 // ─── Types ────────────────────────────────────────────────────────────────────

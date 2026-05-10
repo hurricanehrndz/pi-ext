@@ -23,7 +23,7 @@ Follow every rule here unless the user explicitly overrides it.
 | Test runner | **Bun** — use `bun test` |
 | Language | **TypeScript** — all extension code is `.ts` |
 | Schema / tool params | **typebox** (`import { Type } from "typebox"`) |
-| Extension API | `@mariozechner/pi-coding-agent` (peer dep, never bundle) |
+| Extension API | `@earendil-works/pi-coding-agent` (peer dep, never bundle) |
 
 Never add `npm`, `yarn`, `pnpm`, or `node` invocations. Always use `bun`.
 
@@ -59,7 +59,7 @@ Rules:
 ### Required shape
 
 ```typescript
-import type { ExtensionAPI } from "@mariozechner/pi-coding-agent";
+import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
 
 export default function (pi: ExtensionAPI) {
   // subscribe to events, register tools/commands/shortcuts/flags
@@ -70,15 +70,15 @@ Async factories are fine when startup async work (e.g. remote config fetch) is n
 
 ### Imports
 
-- Peer deps (never bundle): `@mariozechner/pi-coding-agent`, `@mariozechner/pi-ai`,
-  `@mariozechner/pi-tui`, `@mariozechner/pi-agent-core`, `typebox`
+- Peer deps (never bundle): `@earendil-works/pi-coding-agent`, `@earendil-works/pi-ai`,
+  `@earendil-works/pi-tui`, `@earendil-works/pi-agent-core`, `typebox`
 - Node built-ins: use `node:fs`, `node:path`, etc. (not bare `fs`, `path`)
 - npm runtime deps: add to the extension's own `package.json` under `dependencies`
 
 ### Tool definitions
 
 - Use `Type.*` from `typebox` for all parameter schemas
-- Use `StringEnum` from `@mariozechner/pi-ai` for union/enum parameters
+- Use `StringEnum` from `@earendil-works/pi-ai` for union/enum parameters
   (Google-compatible alternative to `Type.Union`)
 - Always return `{ content: [...], details: {...} }` from `execute`
 - Provide `promptSnippet` and `promptGuidelines` when the tool needs to be
@@ -141,7 +141,7 @@ description: <text>    # ≤1024 chars, specific and actionable — explains WHE
 - Run `bun install` at repo root for shared tooling
 - Run `bun install` inside `extensions/<name>/` for extension-specific deps
 - Never commit `node_modules/`; add it to `.gitignore`
-- `@mariozechner/pi-coding-agent` and other pi core packages must be in
+- `@earendil-works/pi-coding-agent` and other pi core packages must be in
   `peerDependencies` with `"*"`, never in `dependencies` — they must not be bundled
 
 ---

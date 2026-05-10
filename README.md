@@ -171,7 +171,7 @@ Once loaded, skills appear as `/skill:<name>` commands inside pi:
 1. Create `extensions/<name>/index.ts`:
 
 ```typescript
-import type { ExtensionAPI } from "@mariozechner/pi-coding-agent";
+import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
 import { Type } from "typebox";
 
 export default function (pi: ExtensionAPI) {
@@ -266,7 +266,7 @@ pi install git:github.com/hurricanehrndz/pi-ext
 | [Bun](https://bun.sh) | Runtime, package manager, test runner |
 | [TypeScript](https://www.typescriptlang.org) | Language for all extensions |
 | [typebox](https://github.com/sinclairzx81/typebox) | JSON Schema / tool parameter types |
-| [@mariozechner/pi-coding-agent](https://pi.dev) | Extension & skill APIs |
+| [@earendil-works/pi-coding-agent](https://pi.dev) | Extension & skill APIs |
 
 ## License
 
