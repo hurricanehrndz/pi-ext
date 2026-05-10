@@ -165,6 +165,7 @@ Once loaded, skills appear as `/skill:<name>` commands inside pi:
 | [persona](extensions/persona/index.ts) | Dynamically overrides the agent persona via `/persona <description>` — cleared with `/persona off` |
 | [install-my-prompts](extensions/install-my-prompts/index.ts) | Symlinks the repo's `prompts/*.md` files and collaborative `APPEND_SYSTEM.md` guidance into `~/.pi/agent` |
 | [system-prompt](extensions/system-prompt/index.ts) | Shows the current system prompt and tool list via `/system-prompt` |
+| [prompt-customizer](extensions/prompt-customizer/index.ts) | Full control over the system prompt via `before_agent_start` — reproduces and exposes every default section for editing |
 
 ## Creating a new extension
 
