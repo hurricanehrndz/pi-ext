@@ -21,8 +21,10 @@
 
 import type { BuildSystemPromptOptions, ExtensionAPI } from "@earendil-works/pi-coding-agent";
 import { formatSkillsForPrompt } from "@earendil-works/pi-coding-agent";
-import { dirname, join, resolve } from "node:path";
+import { existsSync } from "node:fs";
+import { basename, dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
+import { homedir } from "node:os";
 
 // ── Resolve pi package paths (README, docs/, examples/) ──────────────────────
 // import.meta.resolve gives us <pkg>/dist/index.js; we go up two levels to reach
@@ -90,6 +92,15 @@ function buildGuidelines(options: BuildSystemPromptOptions): string {
 	return `Guidelines:\n${items.map((g) => `- ${g}`).join("\n")}`;
 }
 
+/** Returns true when the Pi documentation section should be included. */
+function shouldIncludePiDocs(cwd: string): boolean {
+	const piHome = join(homedir(), ".pi");
+	if (cwd === piHome || cwd.startsWith(piHome + "/")) return true;
+	if (basename(cwd) === "pi-ext") return true;
+	if (existsSync(join(cwd, ".pi", ".ENABLE_PI_DOCS"))) return true;
+	return false;
+}
+
 /** Section 4 – Pi documentation pointers */
 function buildPiDocs(): string {
 	const pkgDir = getPiPackageDir();
@@ -154,8 +165,7 @@ export default function promptCustomizer(pi: ExtensionAPI) {
 			buildTools(opts),
 			"",
 			buildGuidelines(opts),
-			// "",
-			// buildPiDocs(),
+			...(shouldIncludePiDocs(opts.cwd) ? ["", buildPiDocs()] : []),
 		].join("\n") +
 			buildAppend(opts) +
 			buildContextFiles(opts) +
