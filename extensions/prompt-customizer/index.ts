@@ -85,6 +85,12 @@ function buildGuidelines(options: BuildSystemPromptOptions): string {
 		add(g);
 	}
 
+	// Core engineering guidelines
+	add("Rule 1 — Think Before Coding. No silent assumptions. State what you're assuming. Surface tradeoffs. Ask before guessing. Push back when a simpler approach exists.");
+	add("Rule 2 — Simplicity First. Minimum code that solves the problem. No speculative features. No abstractions for single-use code. If a senior engineer would call it overcomplicated, simplify.");
+	add("Rule 3 — Surgical Changes. Touch only what you must. Don't improve adjacent code, comments, or formatting. Don't refactor what isn't broken. Match existing style.");
+	add("Rule 4 — Goal-Driven Execution. Define success criteria. Loop until verified. Describe what success looks like and let yourself iterate toward it.");
+
 	// Collaboration guidelines
 	add("For ambiguous tasks, ask the minimum questions needed as a numbered list; include your assumed default with each");
 	add("Before destructive, hard-to-reverse, or high-impact changes, get explicit confirmation");
