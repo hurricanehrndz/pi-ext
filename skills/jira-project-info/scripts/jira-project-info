@@ -1,0 +1,410 @@
+#!/usr/bin/env -S uv run --script
+# /// script
+# requires-python = ">=3.11"
+# ///
+"""Jira project/epic helper for pi skills.
+
+Wraps the local jira-mcp command, formats common project-as-epic lookups,
+and supports guarded sub-task creation.
+"""
+
+from __future__ import annotations
+
+import argparse
+import json
+import os
+import shutil
+import subprocess
+import sys
+from typing import Any, Iterable
+
+
+def die(message: str, code: int = 1) -> None:
+    print(f"error: {message}", file=sys.stderr)
+    raise SystemExit(code)
+
+
+def ensure_jira_mcp() -> None:
+    if shutil.which("jira-mcp") is None:
+        die("jira-mcp was not found on PATH")
+
+
+def run_jira(tool: str, *args: str, timeout_ms: int = 60000) -> Any:
+    ensure_jira_mcp()
+    cmd = ["jira-mcp", tool, *args, "--timeout", str(timeout_ms), "-o", "json"]
+    proc = subprocess.run(cmd, text=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+    if proc.returncode != 0:
+        if proc.stdout.strip():
+            print(proc.stdout.strip(), file=sys.stderr)
+        if proc.stderr.strip():
+            print(proc.stderr.strip(), file=sys.stderr)
+        die(f"jira-mcp command failed: {' '.join(cmd)}", proc.returncode)
+    out = proc.stdout.strip()
+    if not out:
+        return None
+    try:
+        data = json.loads(out)
+    except json.JSONDecodeError:
+        return {"raw": out}
+    if isinstance(data, dict) and data.get("content") and "Error:" in json.dumps(data.get("content")):
+        return {"error": data, "tool": tool, "args": list(args)}
+    return data
+
+
+def run_jira_raw(tool: str, payload: dict[str, Any], timeout_ms: int = 60000) -> Any:
+    return run_jira(tool, "--raw", json.dumps(payload), timeout_ms=timeout_ms)
+
+
+def jira_username(explicit: str | None = None) -> str:
+    return explicit or os.environ.get("JIRA_USERNAME") or os.environ.get("USERNAME") or os.environ.get("USER") or ""
+
+
+def jql_string(value: str) -> str:
+    return '"' + value.replace('\\', '\\\\').replace('"', '\\"') + '"'
+
+
+def join_and(parts: Iterable[str]) -> str:
+    return " AND ".join(p for p in parts if p)
+
+
+def print_json(data: Any) -> None:
+    print(json.dumps(data, indent=2, sort_keys=False))
+
+
+def issue_project_key(issue_key: str) -> str:
+    if "-" not in issue_key:
+        die(f"parent issue key must include a project prefix, got: {issue_key}")
+    return issue_key.split("-", 1)[0]
+
+
+def parse_components(values: list[str] | None) -> list[str]:
+    if not values:
+        return []
+    components: list[str] = []
+    for value in values:
+        for part in value.split(","):
+            component = part.strip()
+            if component:
+                components.append(component)
+    return components
+
+
+def load_text(value: str | None, file_path: str | None, field_name: str) -> str:
+    if value and file_path:
+        die(f"pass either --{field_name} or --{field_name}-file, not both")
+    if file_path:
+        with open(file_path, encoding="utf-8") as f:
+            return f.read()
+    if value:
+        return value
+    die(f"missing required --{field_name} or --{field_name}-file")
+
+
+def build_subtask_payload(args: argparse.Namespace) -> dict[str, Any]:
+    parent = args.parent.strip().upper()
+    project_key = (args.project_key or issue_project_key(parent)).strip().upper()
+    return {
+        "project_key": project_key,
+        "summary": args.summary,
+        "issue_type": "Sub-task",
+        "description": load_text(args.description, args.description_file, "description"),
+        "components": parse_components(args.component),
+        "assignee": args.assignee,
+        "additional_fields": {
+            "parent": parent,
+        },
+    }
+
+
+def as_list(data: Any, key: str) -> list[dict[str, Any]]:
+    if isinstance(data, dict) and isinstance(data.get(key), list):
+        return data[key]
+    return []
+
+
+def md_escape(value: Any) -> str:
+    if value is None:
+        return ""
+    text = str(value)
+    return text.replace("|", "\\|").replace("\n", " ")
+
+
+def render_issue_table(issues: list[dict[str, Any]]) -> None:
+    if not issues:
+        print("No issues found.")
+        return
+    columns = ["Key", "Summary", "Status", "Priority", "Assignee", "Updated", "Due", "Link"]
+    print("| " + " | ".join(columns) + " |")
+    print("|" + "|".join(["---"] * len(columns)) + "|")
+    for issue in issues:
+        row = [
+            issue.get("key"),
+            issue.get("summary"),
+            issue.get("status"),
+            issue.get("priority"),
+            issue.get("assignee"),
+            issue.get("updated"),
+            issue.get("due_date"),
+            issue.get("link"),
+        ]
+        print("| " + " | ".join(md_escape(v) for v in row) + " |")
+
+
+def render_project_table(projects: list[dict[str, Any]]) -> None:
+    if not projects:
+        print("No projects found.")
+        return
+    print("| Key | Name | Link |")
+    print("|---|---|---|")
+    for project in projects:
+        print(
+            "| "
+            + " | ".join(md_escape(project.get(k)) for k in ["key", "name", "link"])
+            + " |"
+        )
+
+
+def render_epic_detail(epic: dict[str, Any]) -> None:
+    print(f"# {epic.get('key', '')}: {epic.get('summary', '')}\n")
+    fields = [
+        ("Link", epic.get("link")),
+        ("Project", epic.get("project")),
+        ("Status", epic.get("status")),
+        ("Priority", epic.get("priority")),
+        ("Assignee", epic.get("assignee")),
+        ("Reporter", epic.get("reporter")),
+        ("Created", epic.get("created")),
+        ("Updated", epic.get("updated")),
+        ("Start date", epic.get("start_date")),
+        ("Due date", epic.get("due_date")),
+        ("Labels", ", ".join(epic.get("labels") or [])),
+        ("Components", ", ".join(epic.get("components") or [])),
+        ("Impact summary", epic.get("impact_summary")),
+        ("Deliverable", epic.get("deliverable")),
+    ]
+    for name, value in fields:
+        if value not in (None, "", []):
+            print(f"- **{name}:** {value}")
+    desc = epic.get("description") or epic.get("description_html")
+    if desc:
+        print("\n## Description\n")
+        print(desc)
+
+
+def command_projects(args: argparse.Namespace) -> None:
+    data = run_jira("ai-tools-jira-get-projects")
+    projects = as_list(data, "projects")
+    if args.text:
+        needle = args.text.lower()
+        projects = [
+            p
+            for p in projects
+            if needle in str(p.get("key", "")).lower()
+            or needle in str(p.get("name", "")).lower()
+        ]
+    if args.json:
+        print_json({"projects": projects, "total": len(projects)})
+    else:
+        render_project_table(projects)
+
+
+def command_epics(args: argparse.Namespace) -> None:
+    conditions = ["issuetype = Epic"]
+    if args.project_key:
+        conditions.append(f"project = {args.project_key}")
+    if args.label:
+        conditions.append(f"labels = {jql_string(args.label)}")
+    if args.text:
+        conditions.append(f"text ~ {jql_string(args.text)}")
+    if not args.include_done:
+        conditions.append("statusCategory != Done")
+    if not args.all_users:
+        user = jira_username(args.username)
+        if not user:
+            die("no Jira username found; set JIRA_USERNAME/USERNAME/USER or pass --username")
+        q_user = jql_string(user)
+        conditions.append(f"(assignee = {q_user} OR reporter = {q_user})")
+    jql = join_and(conditions) + " ORDER BY updated DESC"
+    data = run_jira(
+        "ai-tools-jira-search-issues",
+        "--query",
+        jql,
+        "--max-results",
+        str(args.max_results),
+    )
+    if args.json:
+        print_json({"jql": jql, "result": data})
+    else:
+        print(f"JQL: `{jql}`\n")
+        render_issue_table(as_list(data, "issues"))
+        if isinstance(data, dict):
+            print(f"\nDisplayed {data.get('displayed', 0)} of {data.get('total', 0)}.")
+
+
+def search_children(epic_key: str, max_results: int, include_done: bool) -> tuple[str, Any]:
+    base_filters = [] if include_done else ["statusCategory != Done"]
+    candidates = [
+        f"\"Epic Link\" = {jql_string(epic_key)}",
+        f"issueFunction in issuesInEpics(\"key = {epic_key}\")",
+        f"parent = {epic_key}",
+    ]
+    first_error: Any = None
+    for candidate in candidates:
+        jql = join_and([candidate, *base_filters]) + " ORDER BY updated DESC"
+        data = run_jira(
+            "ai-tools-jira-search-issues",
+            "--query",
+            jql,
+            "--max-results",
+            str(max_results),
+        )
+        if isinstance(data, dict) and "error" in data:
+            first_error = data
+            continue
+        return jql, data
+    return candidates[0], first_error or {"issues": [], "total": 0, "displayed": 0}
+
+
+def command_epic(args: argparse.Namespace) -> None:
+    epic = run_jira(
+        "ai-tools-jira-get-issue",
+        "--issue-id",
+        args.key,
+        "--include-changelog",
+        "false",
+    )
+    children_jql = None
+    children = None
+    comments = None
+    if args.children:
+        children_jql, children = search_children(args.key, args.max_results, args.include_done)
+    if args.comments:
+        comments = run_jira(
+            "ai-tools-jira-get-comments",
+            "--issue-id",
+            args.key,
+            "--include-changelog",
+            "false",
+        )
+    if args.json:
+        print_json(
+            {
+                "epic": epic,
+                "children_jql": children_jql,
+                "children": children,
+                "comments": comments,
+            }
+        )
+        return
+
+    if isinstance(epic, dict) and "error" in epic:
+        print_json(epic)
+    elif isinstance(epic, dict):
+        render_epic_detail(epic)
+    else:
+        print_json(epic)
+
+    if args.children:
+        print("\n## Child issues\n")
+        if children_jql:
+            print(f"JQL: `{children_jql}`\n")
+        if isinstance(children, dict) and "error" in children:
+            print("Child issue search failed:")
+            print_json(children["error"])
+        else:
+            render_issue_table(as_list(children, "issues"))
+            if isinstance(children, dict):
+                print(f"\nDisplayed {children.get('displayed', 0)} of {children.get('total', 0)}.")
+
+    if args.comments:
+        print("\n## Comments\n")
+        print_json(comments)
+
+
+def command_search(args: argparse.Namespace) -> None:
+    data = run_jira(
+        "ai-tools-jira-search-issues",
+        "--query",
+        args.jql,
+        "--max-results",
+        str(args.max_results),
+    )
+    if args.json:
+        print_json({"jql": args.jql, "result": data})
+    else:
+        print(f"JQL: `{args.jql}`\n")
+        render_issue_table(as_list(data, "issues"))
+        if isinstance(data, dict):
+            print(f"\nDisplayed {data.get('displayed', 0)} of {data.get('total', 0)}.")
+
+
+def command_create_subtask(args: argparse.Namespace) -> None:
+    payload = build_subtask_payload(args)
+    if not args.confirm:
+        print("Dry run. Re-run with --confirm after explicit user confirmation to create this Jira sub-task.\n")
+        print_json(payload)
+        return
+    data = run_jira_raw("ai-tools-jira-create-issue", payload)
+    print_json(data)
+
+
+def build_parser() -> argparse.ArgumentParser:
+    parser = argparse.ArgumentParser(
+        description="Helper for fetching Jira project information and guarded sub-task creation.",
+    )
+    sub = parser.add_subparsers(dest="command", required=True)
+
+    p_projects = sub.add_parser("projects", help="List Jira projects")
+    p_projects.add_argument("--text", help="Filter project key/name locally")
+    p_projects.add_argument("--json", action="store_true", help="Emit JSON instead of Markdown")
+    p_projects.set_defaults(func=command_projects)
+
+    p_epics = sub.add_parser("epics", help="Find project epics")
+    p_epics.add_argument("--username", help="Jira username; defaults to JIRA_USERNAME, USERNAME, then USER")
+    p_epics.add_argument("--all-users", action="store_true", help="Do not restrict to assignee/reporter")
+    p_epics.add_argument("--include-done", action="store_true", help="Include Done/Closed epics")
+    p_epics.add_argument("--project-key", help="Restrict to a Jira project key, for example CPE")
+    p_epics.add_argument("--label", help="Restrict to a label, for example cpe_project")
+    p_epics.add_argument("--text", help="Text search within epic fields")
+    p_epics.add_argument("--max-results", type=int, default=25)
+    p_epics.add_argument("--json", action="store_true", help="Emit JSON instead of Markdown")
+    p_epics.set_defaults(func=command_epics)
+
+    p_epic = sub.add_parser("epic", help="Fetch one epic/project and optionally its child issues")
+    p_epic.add_argument("key", help="Epic issue key, for example CPE-13605")
+    p_epic.add_argument("--children", action=argparse.BooleanOptionalAction, default=True, help="Fetch child issues")
+    p_epic.add_argument("--comments", action="store_true", help="Fetch epic comments")
+    p_epic.add_argument("--include-done", action="store_true", help="Include Done/Closed child issues")
+    p_epic.add_argument("--max-results", type=int, default=50)
+    p_epic.add_argument("--json", action="store_true", help="Emit JSON instead of Markdown")
+    p_epic.set_defaults(func=command_epic)
+
+    p_search = sub.add_parser("search", help="Run a read-only Jira JQL issue search")
+    p_search.add_argument("jql", help="JQL query")
+    p_search.add_argument("--max-results", type=int, default=25)
+    p_search.add_argument("--json", action="store_true", help="Emit JSON instead of Markdown")
+    p_search.set_defaults(func=command_search)
+
+    p_create_subtask = sub.add_parser("create-subtask", help="Create a Jira Sub-task under a parent story")
+    p_create_subtask.add_argument("--parent", required=True, help="Parent story key, for example CPE-12345")
+    p_create_subtask.add_argument("--project-key", help="Project key; defaults to the parent issue prefix")
+    p_create_subtask.add_argument("--summary", required=True, help="Concise sub-task title")
+    p_create_subtask.add_argument("--description", help="Structured sub-task description")
+    p_create_subtask.add_argument("--description-file", help="Read structured sub-task description from a file")
+    p_create_subtask.add_argument("--component", action="append", help="Component name; repeat or comma-separate for multiple components")
+    p_create_subtask.add_argument("--assignee", help="Jira username to assign; omitted leaves Jira default/unassigned")
+    p_create_subtask.add_argument("--confirm", action="store_true", help="Actually create the Jira sub-task; without this, print the payload only")
+    p_create_subtask.set_defaults(func=command_create_subtask)
+
+    return parser
+
+
+def main(argv: list[str] | None = None) -> int:
+    parser = build_parser()
+    args = parser.parse_args(argv)
+    args.func(args)
+    return 0
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())

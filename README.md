@@ -141,6 +141,7 @@ Once loaded, skills appear as `/skill:<name>` commands inside pi:
 | Name | Description |
 |------|-------------|
 | [commit](skills/commit/SKILL.md) | Creates Conventional Commits-style git commits from staged or specified changes |
+| [jira-project-info](skills/jira-project-info/SKILL.md) | Fetches Jira project, epic, and issue information, with guarded sub-task creation via local `jira-mcp` |
 
 ## Prompts
 
