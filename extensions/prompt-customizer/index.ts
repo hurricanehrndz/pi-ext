@@ -7,13 +7,14 @@
  *
  * Sections (in order):
  *   1. ROLE        – the opening "You are …" paragraph
- *   2. TOOLS       – available tools list (auto-derived from selectedTools + toolSnippets)
- *   3. GUIDELINES  – bullet list of behaviour rules (auto-derived + always-on)
- *   4. PI DOCS     – links to README / docs / examples (can be removed if not working on pi)
- *   5. APPEND      – user-supplied --append-system-prompt content (pass-through)
- *   6. CONTEXT     – project context files e.g. AGENTS.md (pass-through)
- *   7. SKILLS      – available skills block (pass-through, gated on read tool)
- *   8. FOOTER      – current date + working directory (always last)
+ *   2. CORE RULES  – always-on engineering rules placed near the top
+ *   3. TOOLS       – available tools list (auto-derived from selectedTools + toolSnippets)
+ *   4. GUIDELINES  – tool/collaboration behaviour rules
+ *   5. PI DOCS     – links to README / docs / examples (can be removed if not working on pi)
+ *   6. APPEND      – user-supplied --append-system-prompt content (pass-through)
+ *   7. CONTEXT     – project context files e.g. AGENTS.md (pass-through)
+ *   8. SKILLS      – available skills block (pass-through, gated on read tool)
+ *   9. FOOTER      – current date + working directory (always last)
  *
  * Usage:
  *   pi -e ./extensions/prompt-customizer/index.ts
@@ -39,10 +40,79 @@ function getPiPackageDir(): string {
 
 /** Section 1 – Role declaration */
 function buildRole(): string {
-	return "You are an expert coding assistant operating inside pi, a coding agent harness. You help users by reading files, executing commands, editing code, and writing new files. You collaborate closely — acting autonomously when the task is clear, pausing to ask focused questions when it isn't.";
+	return "You are an expert coding assistant operating inside pi, a coding agent harness. You work as a collaborative engineering partner: reading files, executing commands, editing code, and writing new files to help move the project forward. Treat coding as a shared process — act autonomously when the task is clear, surface assumptions and tradeoffs when they matter, and pause for focused questions when direction or risk is unclear.";
 }
 
-/** Section 2 – Available tools list */
+/** Section 2 – Core engineering rules */
+function buildCoreRules(): string {
+	return [
+		"These rules apply to every task in this project unless explicitly overridden.",
+		"Bias: caution over speed on non-trivial work. Use judgment on trivial tasks.",
+		"",
+		"Rule 1 — Think Before Coding",
+		"State assumptions explicitly. If uncertain, ask rather than guess.",
+		"For ambiguous tasks, ask the minimum necessary questions as a numbered list; include your assumed default for each.",
+		"Present multiple interpretations when ambiguity exists.",
+		"When proceeding on an assumption, state it briefly.",
+		"Push back when a simpler approach exists.",
+		"Stop when confused. Name what's unclear.",
+		"",
+		"Rule 2 — Simplicity First",
+		"Minimum code that solves the problem. Nothing speculative.",
+		"No features beyond what was asked. No abstractions for single-use code.",
+		"Test: would a senior engineer say this is overcomplicated? If yes, simplify.",
+		"",
+		"Rule 3 — Surgical Changes",
+		"Touch only what you must. Clean up only your own mess.",
+		"Don't \"improve\" adjacent code, comments, or formatting.",
+		"Don't refactor what isn't broken. Match existing style.",
+		"",
+		"Rule 4 — Define Success, Then Verify",
+		"Before coding, identify the desired outcome and constraints.",
+		"Follow explicit user instructions, but do not mistake a checklist for success.",
+		"After each significant change, verify against the outcome.",
+		"Stop when the success criteria are met; do not expand scope.",
+		"",
+		"Rule 5 — Use the model only for judgment calls",
+		"Use me for: classification, drafting, summarization, extraction.",
+		"Do NOT use me for: routing, retries, deterministic transforms.",
+		"If code can answer, code answers.",
+		"",
+		"Rule 6 — Surface conflicts, don't average them",
+		"If two patterns contradict, pick one (more recent / more tested).",
+		"Explain why. Flag the other for cleanup.",
+		"Don't blend conflicting patterns.",
+		"",
+		"Rule 7 — Read before you write",
+		"Before adding code, read exports, immediate callers, shared utilities.",
+		"\"Looks orthogonal\" is dangerous. If unsure why code is structured a way, ask.",
+		"",
+		"Rule 8 — Tests verify intent, not just behavior",
+		"Tests must encode WHY behavior matters, not just WHAT it does.",
+		"A test that can't fail when business logic changes is wrong.",
+		"",
+		"Rule 9 — Checkpoint after every significant step",
+		"Summarize what was done, what's verified, what's left.",
+		"Don't continue from a state you can't describe back.",
+		"If you lose track, stop and restate.",
+		"",
+		"Rule 10 — Match the codebase's conventions, even if you disagree",
+		"Conformance > taste inside the codebase.",
+		"If you genuinely think a convention is harmful, surface it. Don't fork silently.",
+		"",
+		"Rule 11 — Confirm Before High-Impact Actions",
+		"Before destructive, hard-to-reverse, expensive, or security-sensitive actions, get explicit confirmation.",
+		"Name what will change and the likely consequence.",
+		"If confirmation is unavailable, stop or propose a reversible alternative.",
+		"",
+		"Rule 12 — Fail loud",
+		"\"Completed\" is wrong if anything was skipped silently.",
+		"\"Tests pass\" is wrong if any were skipped.",
+		"Default to surfacing uncertainty, not hiding it.",
+	].join("\n");
+}
+
+/** Section 3 – Available tools list */
 function buildTools(options: BuildSystemPromptOptions): string {
 	const tools = options.selectedTools ?? ["read", "bash", "edit", "write"];
 	const visibleTools = tools.filter((name) => !!options.toolSnippets?.[name]);
@@ -85,17 +155,6 @@ function buildGuidelines(options: BuildSystemPromptOptions): string {
 		add(g);
 	}
 
-	// Core engineering guidelines
-	add("Rule 1 — Think Before Coding. No silent assumptions. State what you're assuming. Surface tradeoffs. Ask before guessing. Push back when a simpler approach exists.");
-	add("Rule 2 — Simplicity First. Minimum code that solves the problem. No speculative features. No abstractions for single-use code. If a senior engineer would call it overcomplicated, simplify.");
-	add("Rule 3 — Surgical Changes. Touch only what you must. Don't improve adjacent code, comments, or formatting. Don't refactor what isn't broken. Match existing style.");
-	add("Rule 4 — Goal-Driven Execution. Define success criteria. Loop until verified. Describe what success looks like and let yourself iterate toward it.");
-
-	// Collaboration guidelines
-	add("For ambiguous tasks, ask the minimum questions needed as a numbered list; include your assumed default with each");
-	add("Before destructive, hard-to-reverse, or high-impact changes, get explicit confirmation");
-	add("When proceeding on an assumption, state it briefly");
-
 	// Always-on guidelines
 	add("Be concise in your responses");
 	add("Show file paths clearly when working with files");
@@ -112,7 +171,7 @@ function shouldIncludePiDocs(cwd: string): boolean {
 	return false;
 }
 
-/** Section 4 – Pi documentation pointers */
+/** Section 5 – Pi documentation pointers */
 function buildPiDocs(): string {
 	const pkgDir = getPiPackageDir();
 	const readmePath = join(pkgDir, "README.md");
@@ -130,12 +189,12 @@ function buildPiDocs(): string {
 	].join("\n");
 }
 
-/** Section 5 – User --append-system-prompt passthrough */
+/** Section 6 – User --append-system-prompt passthrough */
 function buildAppend(options: BuildSystemPromptOptions): string {
 	return options.appendSystemPrompt ? `\n\n${options.appendSystemPrompt}` : "";
 }
 
-/** Section 6 – Project context files (AGENTS.md, etc.) passthrough */
+/** Section 7 – Project context files (AGENTS.md, etc.) passthrough */
 function buildContextFiles(options: BuildSystemPromptOptions): string {
 	const files = options.contextFiles ?? [];
 	if (files.length === 0) return "";
@@ -147,7 +206,7 @@ function buildContextFiles(options: BuildSystemPromptOptions): string {
 	return lines.join("\n");
 }
 
-/** Section 7 – Skills block passthrough (only when read tool is active) */
+/** Section 8 – Skills block passthrough (only when read tool is active) */
 function buildSkills(options: BuildSystemPromptOptions): string {
 	const tools = options.selectedTools ?? ["read", "bash", "edit", "write"];
 	const hasRead = tools.includes("read");
@@ -156,7 +215,7 @@ function buildSkills(options: BuildSystemPromptOptions): string {
 	return formatSkillsForPrompt(skills);
 }
 
-/** Section 8 – Date + CWD footer */
+/** Section 9 – Date + CWD footer */
 function buildFooter(options: BuildSystemPromptOptions): string {
 	const now = new Date();
 	const date = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}-${String(now.getDate()).padStart(2, "0")}`;
@@ -172,6 +231,8 @@ export default function promptCustomizer(pi: ExtensionAPI) {
 
 		const prompt = [
 			buildRole(),
+			"",
+			buildCoreRules(),
 			"",
 			buildTools(opts),
 			"",
