@@ -155,6 +155,8 @@ function buildGuidelines(options: BuildSystemPromptOptions): string {
 		add(g);
 	}
 
+	add("Use curl + pandoc via bash when you need to read a blog post, documentation page, article, or website URL. Fetch the page, convert HTML to readable Markdown, then reason from that content. If pandoc is unavailable, say so and use the best readable fallback. Do not fetch websites speculatively when local files or provided context are enough.");
+
 	// Always-on guidelines
 	add("Be concise in your responses");
 	add("Show file paths clearly when working with files");
