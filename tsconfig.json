@@ -8,5 +8,5 @@
     "skipLibCheck": true,
     "types": ["bun-types"]
   },
-  "include": ["extensions/**/*.ts", "skills/**/*.ts"]
+  "include": ["extensions/**/*.ts", "skills/**/*.ts", "shared/**/*.ts"]
 }
