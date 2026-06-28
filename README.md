@@ -32,20 +32,12 @@ pi-ext/
 ## Install
 
 ```bash
-# Install globally — all extensions, skills, and themes auto-discovered on every pi startup
+# Install globally — all extensions and skills auto-discovered on every pi startup
 pi install git:github.com/hurricanehrndz/pi-ext
 
 # Try without installing (current run only)
 pi -e git:github.com/hurricanehrndz/pi-ext
 ```
-
-After installing, activate a theme via `/settings` or `~/.pi/agent/settings.json`:
-
-```json
-{ "theme": "catppuccin-latte" }
-```
-
-Other available themes: `rose-pine`.
 
 ## Prerequisites
 
@@ -146,13 +138,6 @@ Once loaded, skills appear as `/skill:<name>` commands inside pi:
 | Name | Description |
 |------|-------------|
 | [review](prompts/review.md) | Reviews the current branch diff against the repository base branch with read-only `git diff` / `git log` / `git show` inspection |
-
-## Themes
-
-| Name | Description |
-|------|-------------|
-| [rose-pine](themes/rose-pine.json) | Rosé Pine — soho vibes, muted base with rose, foam, iris, and gold accents |
-| [catppuccin-latte](themes/catppuccin-latte.json) | Catppuccin Latte — warm light theme with pastel mauve, blue, teal, and peach accents |
 
 ## Extensions
 
