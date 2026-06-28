@@ -39,6 +39,37 @@ pi install git:github.com/hurricanehrndz/pi-ext
 pi -e git:github.com/hurricanehrndz/pi-ext
 ```
 
+## Bootstrapping my config
+
+To reproduce my personal pi setup on a fresh machine:
+
+```bash
+# 1. Clone this repo to the expected location
+git clone https://github.com/hurricanehrndz/pi-ext ~/src/me/pi-ext
+cd ~/src/me/pi-ext
+bun install
+
+# 2. Register the package with pi (auto-discovers all extensions + skills)
+pi add ~/src/me/pi-ext
+```
+
+### Catppuccin theme
+
+My config uses the [Catppuccin](https://github.com/otahontas/pi-coding-agent-catppuccin)
+theme package, set to the `catppuccin-latte` flavor. Add it with:
+
+```bash
+pi add git:github.com/otahontas/pi-coding-agent-catppuccin
+```
+
+Then select the flavor in `~/.pi/agent/settings.json`:
+
+```json
+{
+  "theme": "catppuccin-latte"
+}
+```
+
 ## Prerequisites
 
 - [Bun](https://bun.sh) ≥ 1.0
