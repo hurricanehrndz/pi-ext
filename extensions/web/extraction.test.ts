@@ -33,6 +33,12 @@ describe("extractMarkdownFromUrl", () => {
 			"Unsupported GitHub URL form",
 		);
 	});
+
+	test("errors before fetching when renderMode browser is requested but the browser is unavailable", async () => {
+		await expect(
+			extractMarkdownFromUrl("https://example.com", { renderMode: "browser", browserAvailable: () => false }),
+		).rejects.toThrow("agent-browser command was not found on PATH");
+	});
 });
 
 describe("buildHtml2MarkdownArgs", () => {

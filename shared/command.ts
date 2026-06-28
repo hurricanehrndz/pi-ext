@@ -1,7 +1,39 @@
 import { Buffer } from "node:buffer";
 import { spawn, type ChildProcessWithoutNullStreams } from "node:child_process";
+import { access, constants } from "node:fs/promises";
+import { delimiter, join } from "node:path";
 
 const DEFAULT_ERROR_SNIPPET_CHARS = 800;
+
+// Resolve whether a command is runnable: a path-qualified command must point at
+// an executable file directly, a bare name is searched across PATH entries.
+export async function commandExists(command: string, env: NodeJS.ProcessEnv = process.env): Promise<boolean> {
+	const name = command.trim();
+	if (name.length === 0) {
+		return false;
+	}
+
+	if (name.includes("/")) {
+		return isExecutable(name);
+	}
+
+	const pathDirs = (env.PATH ?? "").split(delimiter).filter((dir) => dir.length > 0);
+	for (const dir of pathDirs) {
+		if (await isExecutable(join(dir, name))) {
+			return true;
+		}
+	}
+	return false;
+}
+
+async function isExecutable(path: string): Promise<boolean> {
+	try {
+		await access(path, constants.X_OK);
+		return true;
+	} catch {
+		return false;
+	}
+}
 
 export type CommandResult = {
 	stdout: string;

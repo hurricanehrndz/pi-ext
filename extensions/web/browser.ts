@@ -1,7 +1,7 @@
 import { mkdir } from "node:fs/promises";
 
 import { buildPersistentBrowserOpenArgs, formatPersistentBrowserLoginCommand } from "../../shared/browser.js";
-import { runCommand, type CommandResult } from "../../shared/command.js";
+import { runCommand, commandExists, type CommandResult } from "../../shared/command.js";
 import { getWebConfig, type WebConfig } from "./config.js";
 
 export type BrowserRenderOptions = {
@@ -28,6 +28,13 @@ export type BrowserRenderCommandPlan = {
 };
 
 const OUTER_HTML_EXPRESSION = "document.documentElement.outerHTML";
+
+// Browser rendering needs the agent-browser CLI on PATH. It is installed only on
+// GUI hosts (it drives a real Chrome via CDP), so headless hosts must fall back
+// to static extraction rather than failing.
+export async function isBrowserAvailable(config: WebConfig = getWebConfig()): Promise<boolean> {
+	return commandExists(config.browserCommand);
+}
 
 export async function renderUrlWithBrowser(url: string, options: BrowserRenderOptions = {}): Promise<BrowserRenderedHtml> {
 	const config = options.config ?? getWebConfig();

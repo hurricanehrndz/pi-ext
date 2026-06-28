@@ -1,5 +1,5 @@
 import { runCommand } from "../../shared/command.js";
-import { renderUrlWithBrowser } from "./browser.js";
+import { isBrowserAvailable, renderUrlWithBrowser } from "./browser.js";
 import { extractGitHubMarkdown, isGitHubHostUrl, parseGitHubUrl } from "./github.js";
 import { looksLikeJsAppShell } from "./shell-detect.js";
 
@@ -23,6 +23,8 @@ export type ExtractMarkdownOptions = {
 	signal?: AbortSignal;
 	html2markdownCommand?: string;
 	timeoutMs?: number;
+	// Test seam: override browser availability detection.
+	browserAvailable?: () => boolean | Promise<boolean>;
 };
 
 type CloudflareMarkdownAttempt = {
@@ -61,7 +63,12 @@ export async function extractMarkdownFromUrl(url: string, options: ExtractMarkdo
 		);
 	}
 
+	const browserAvailable = options.browserAvailable ?? (() => isBrowserAvailable());
+
 	if (renderMode === "browser") {
+		if (!(await browserAvailable())) {
+			throw new Error(browserUnavailableMessage("renderMode \"browser\" was requested"));
+		}
 		return extractBrowserMarkdown(normalizedUrl, options, ["Browser rendering requested via renderMode: browser."]);
 	}
 
@@ -76,13 +83,26 @@ export async function extractMarkdownFromUrl(url: string, options: ExtractMarkdo
 	}
 
 	if (shouldUseBrowserFallback(renderMode, staticExtraction.html, staticExtraction.extracted.markdown)) {
-		return extractBrowserMarkdown(normalizedUrl, options, [
-			...staticExtraction.extracted.warnings,
-			"Browser fallback triggered automatically because static extraction looked like a JavaScript app shell.",
-		]);
+		if (await browserAvailable()) {
+			return extractBrowserMarkdown(normalizedUrl, options, [
+				...staticExtraction.extracted.warnings,
+				"Browser fallback triggered automatically because static extraction looked like a JavaScript app shell.",
+			]);
+		}
+		return {
+			...staticExtraction.extracted,
+			warnings: [
+				...staticExtraction.extracted.warnings,
+				"Static extraction looked like a JavaScript app shell, but browser rendering is unavailable on this host (agent-browser not found on PATH); returning the static extraction. Browser rendering is enabled only on GUI hosts.",
+			],
+		};
 	}
 
 	return staticExtraction.extracted;
+}
+
+function browserUnavailableMessage(context: string): string {
+	return `${context}, but browser rendering is unavailable on this host: the agent-browser command was not found on PATH. Browser rendering is enabled only on GUI hosts; retry with renderMode "static" or "auto".`;
 }
 
 export function shouldUseBrowserFallback(renderMode: RenderMode, html: string, markdown: string): boolean {
