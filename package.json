@@ -10,7 +10,7 @@
     "skills/*"
   ],
   "pi": {
-    "extensions": ["./extensions", "!extensions/ask-user/**"],
+    "extensions": ["./extensions"],
     "skills": ["./skills"],
     "themes": ["./themes"]
   },
