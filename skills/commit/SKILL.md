@@ -33,3 +33,7 @@ Create a git commit for the current changes using a concise Conventional Commits
 4. If there are ambiguous extra files, ask the user for clarification before committing.
 5. Stage only the intended files (all changes if no files specified).
 6. Run `git commit -m "<subject>"` (and `-m "<body>"` if needed).
+
+## Maintenance
+
+This skill lives in the `pi-ext` repo at `skills/commit/`. If you find a bug while using it, fix it and commit the change to the repo first, before relying on the skill further.

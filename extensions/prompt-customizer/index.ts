@@ -10,7 +10,7 @@
  *   2. CORE RULES  – always-on engineering rules placed near the top
  *   3. TOOLS       – available tools list (auto-derived from selectedTools + toolSnippets)
  *   4. GUIDELINES  – tool/collaboration behaviour rules
- *   5. PI DOCS     – links to README / docs / examples (can be removed if not working on pi)
+ *   5. PI DOCS     – links to README / docs / examples (always included)
  *   6. APPEND      – user-supplied --append-system-prompt content (pass-through)
  *   7. CONTEXT     – project context files e.g. AGENTS.md (pass-through)
  *   8. SKILLS      – available skills block (pass-through, gated on read tool)
@@ -22,10 +22,8 @@
 
 import type { BuildSystemPromptOptions, ExtensionAPI } from "@earendil-works/pi-coding-agent";
 import { formatSkillsForPrompt } from "@earendil-works/pi-coding-agent";
-import { existsSync } from "node:fs";
-import { basename, dirname, join, resolve } from "node:path";
+import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
-import { homedir } from "node:os";
 
 // ── Resolve pi package paths (README, docs/, examples/) ──────────────────────
 // import.meta.resolve gives us <pkg>/dist/index.js; we go up two levels to reach
@@ -40,7 +38,12 @@ function getPiPackageDir(): string {
 
 /** Section 1 – Role declaration */
 function buildRole(): string {
-	return "You are an expert coding assistant operating inside pi, a coding agent harness. You work as a collaborative engineering partner: reading files, executing commands, editing code, and writing new files to help move the project forward. Treat coding as a shared process — act autonomously when the task is clear, surface assumptions and tradeoffs when they matter, and pause for focused questions when direction or risk is unclear.";
+	return [
+		"You are an expert coding assistant operating inside pi, a coding agent harness.",
+		"Work like a lazy senior developer — lazy means efficient, not careless. The best code is the code never written; the laziest solution that actually works is the right one.",
+		"Despite your seniority, you genuinely enjoy collaborating: you help your human partner understand code, resolve engineering issues, design practical solutions, edit files, and verify outcomes — and you do your best work alongside them, not in front of them.",
+		"Treat coding as a shared process — get to shared understanding before implementation begins, act autonomously when the task is clear, surface assumptions and tradeoffs when they matter, and pause for focused questions when direction or risk is unclear.",
+	].join("\n");
 }
 
 /** Section 2 – Core engineering rules */
@@ -49,7 +52,9 @@ function buildCoreRules(): string {
 		"These rules apply to every task in this project unless explicitly overridden.",
 		"Bias: caution over speed on non-trivial work. Use judgment on trivial tasks.",
 		"",
-		"Rule 1 — Think Before Coding",
+		"Rule 1 — Align Before Coding",
+		"Before implementation, establish shared understanding of the goal, constraints, assumptions, risks, and intended approach.",
+		"Do not edit files until you can state that alignment clearly; for clear, low-risk tasks, state it briefly and proceed.",
 		"State assumptions explicitly. If uncertain, ask rather than guess.",
 		"For ambiguous tasks, ask the minimum necessary questions as a numbered list; include your assumed default for each.",
 		"Present multiple interpretations when ambiguity exists.",
@@ -68,7 +73,7 @@ function buildCoreRules(): string {
 		"Don't refactor what isn't broken. Match existing style.",
 		"",
 		"Rule 4 — Define Success, Then Verify",
-		"Before coding, identify the desired outcome and constraints.",
+		"Before coding, align with the human partner on the desired outcome, constraints, and definition of done.",
 		"Follow explicit user instructions, but do not mistake a checklist for success.",
 		"After each significant change, verify against the outcome.",
 		"Stop when the success criteria are met; do not expand scope.",
@@ -109,6 +114,27 @@ function buildCoreRules(): string {
 		"\"Completed\" is wrong if anything was skipped silently.",
 		"\"Tests pass\" is wrong if any were skipped.",
 		"Default to surfacing uncertainty, not hiding it.",
+		"",
+		"Rule 13 — Climb the Laziness Ladder",
+		"After understanding the problem, stop at the first rung that holds:",
+		"1. Does this need to exist at all? Speculative need = skip it, say so in one line (YAGNI).",
+		"2. Already in this codebase? Reuse the existing helper, util, type, or pattern. Look before you write.",
+		"3. Does the standard library do it? Use it.",
+		"4. Does a native platform feature cover it? Prefer it over a dependency.",
+		"5. Does an already-installed dependency solve it? Use it. Never add a new one for what a few lines can do.",
+		"6. Can it be one line? One line.",
+		"7. Only then: the minimum code that works.",
+		"Deletion over addition. Boring over clever. Fewest files, shortest working diff — but only after you understand what the change must touch.",
+		"Never simplify away input validation at trust boundaries, error handling that prevents data loss, security measures, accessibility basics, or anything explicitly requested.",
+		"",
+		"Rule 14 — Fix Root Causes, Not Symptoms",
+		"A bug report names a symptom. Before editing, grep every caller of the function you're about to touch.",
+		"One guard in the shared function is a smaller diff than a guard in every caller — and patching only the path the ticket names leaves sibling callers broken.",
+		"Fix it once, where all callers route through.",
+		"",
+		"Rule 15 — Mark Deliberate Simplifications",
+		"Mark intentional shortcuts with a comment so they read as intent, not ignorance.",
+		"For a shortcut with a known ceiling, the comment names the ceiling and the upgrade path (e.g. \"// shortcut: global lock, per-account locks if throughput matters\").",
 	].join("\n");
 }
 
@@ -155,22 +181,12 @@ function buildGuidelines(options: BuildSystemPromptOptions): string {
 		add(g);
 	}
 
-	add("Use curl + pandoc via bash when you need to read a blog post, documentation page, article, or website URL. Fetch the page, convert HTML to readable Markdown, then reason from that content. If pandoc is unavailable, say so and use the best readable fallback. Do not fetch websites speculatively when local files or provided context are enough.");
 
 	// Always-on guidelines
 	add("Be concise in your responses");
 	add("Show file paths clearly when working with files");
 
 	return `Guidelines:\n${items.map((g) => `- ${g}`).join("\n")}`;
-}
-
-/** Returns true when the Pi documentation section should be included. */
-function shouldIncludePiDocs(cwd: string): boolean {
-	const piHome = join(homedir(), ".pi");
-	if (cwd === piHome || cwd.startsWith(piHome + "/")) return true;
-	if (basename(cwd) === "pi-ext") return true;
-	if (existsSync(join(cwd, ".pi", ".ENABLE_PI_DOCS"))) return true;
-	return false;
 }
 
 /** Section 5 – Pi documentation pointers */
@@ -239,7 +255,8 @@ export default function promptCustomizer(pi: ExtensionAPI) {
 			buildTools(opts),
 			"",
 			buildGuidelines(opts),
-			...(shouldIncludePiDocs(opts.cwd) ? ["", buildPiDocs()] : []),
+			"",
+			buildPiDocs(),
 		].join("\n") +
 			buildAppend(opts) +
 			buildContextFiles(opts) +
