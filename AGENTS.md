@@ -29,6 +29,20 @@ Never add `npm`, `yarn`, `pnpm`, or `node` invocations. Always use `bun`.
 
 ---
 
+## Subagents
+
+- “Subagent” always means a separate `pi` process spawned by the current pi orchestrator.
+- Whenever the user mentions a subagent or asks to delegate work, read and follow `skills/subagent/SKILL.md`.
+- Delegate any bounded task the orchestrator deems useful, including research, planning, implementation, edits, verification, testing, or review.
+- Default to a one-shot child invoked through bash with `pi --print --no-session`, run from the directory relevant to the task.
+- If the user specifies a model, pass both `--provider` and `--model`; pass `--thinking` when an effort or thinking level is specified.
+- Omit `--tools` when the child needs normal pi capabilities. Use a tool allowlist only when the delegated role must be constrained, such as a read-only review.
+- Do not duplicate the delegated work in the orchestrator. Wait for the child and report its result; surface its exit status and stderr if it fails.
+- For long-running subagents that need monitoring, cancellation, or follow-up messages, run a persistent pi session in tmux instead of `pi --print`; keep `pi --print` for one-shot delegation.
+- If this workflow needs richer orchestration in the future, use pi's bundled `examples/extensions/subagent/` as the starting point and follow the current pi extension documentation before implementing more machinery.
+
+---
+
 ## Project structure rules
 
 ```
