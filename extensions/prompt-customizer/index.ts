@@ -26,9 +26,11 @@ import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 
 // ── Resolve pi package paths (README, docs/, examples/) ──────────────────────
-// import.meta.resolve gives us <pkg>/dist/index.js; we go up two levels to reach
-// the package root where README.md, docs/, and examples/ live.
 function getPiPackageDir(): string {
+	// Nix/Guix wrappers provide the package root explicitly because their store
+	// layouts are not resolvable from extension source paths.
+	if (process.env.PI_PACKAGE_DIR) return process.env.PI_PACKAGE_DIR;
+
 	const indexUrl = import.meta.resolve("@earendil-works/pi-coding-agent");
 	const indexPath = fileURLToPath(indexUrl);
 	return resolve(dirname(dirname(indexPath))); // dist/ → package root
