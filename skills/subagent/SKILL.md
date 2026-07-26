@@ -10,6 +10,7 @@ description: Spawns pi as a separate subagent process for edits, verification, r
 ## Rules
 
 - Delegate the requested task to the subagent instead of doing that task in the orchestrator's context.
+- Prefer serial delegation: one subagent at a time, each finished before the next starts. This keeps the work reviewable and stops children racing on the same files. Fanning out is the exception — reserve it for genuinely independent pieces where waiting is the real cost, and say why before doing it.
 - Run the subagent from the directory relevant to the task.
 - Use `pi --print --no-session` so the child has isolated context and returns its result to the orchestrator.
 - Pass a short, simple task as one shell-quoted prompt argument. For a multiline, quote-heavy, code-heavy, or synthesized prompt, write the exact prompt to a private temporary file outside the repository and redirect that file to pi's stdin. Do not squeeze complex prompts into a command argument or tell the child to read the prompt file itself.

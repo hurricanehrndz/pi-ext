@@ -1,6 +1,6 @@
 ---
 name: commit
-description: "Read this skill before making git commits"
+description: Writes Conventional Commits-style git commits from staged or specified changes. Use whenever committing, amending, or splitting work into commits in this or any repository.
 ---
 
 Create a git commit for the current changes using a concise Conventional Commits-style subject.

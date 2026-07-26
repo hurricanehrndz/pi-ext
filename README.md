@@ -84,7 +84,48 @@ cd pi-ext
 
 # Install dependencies
 bun install
+
+# Typecheck (this is the whole build — extensions are run from source by pi)
+bunx tsc --noEmit
 ```
+
+`bun install` pulls `@earendil-works/*` from npm purely for **types**. Nothing here is compiled or
+bundled: pi loads `extensions/<name>/index.ts` from source at runtime, which is why those packages
+stay in `peerDependencies`.
+
+Iterate with `pi -e ./extensions/<name>/index.ts`, then `/reload` inside pi after each edit.
+
+### Developing against a Nix-installed pi
+
+On NixOS (or with Home Manager), `pi` on `$PATH` is a wrapper script, not the real binary:
+
+```
+/etc/profiles/per-user/<you>/bin/pi   →  /nix/store/<hash>-pi/bin/pi        (wrapper)
+                                      →  /nix/store/<hash>-pi-<ver>/bin/pi  (real binary)
+```
+
+The npm package payload — `README.md`, `docs/`, `examples/` — sits in `libexec/pi` under that second
+store path. Two consequences:
+
+1. **`import.meta.resolve("@earendil-works/pi-coding-agent")` does not find it.** Resolution walks up
+   from the extension's own directory, so it lands on `node_modules/` or Bun's global install cache —
+   possibly a *different version* than the binary you are running. `extensions/prompt-customizer`
+   therefore honours `PI_PACKAGE_DIR` first, and re-exports it so nested `pi` subagents and skill
+   scripts inherit the same root.
+
+2. **Store paths change on every upgrade.** Never hardcode one. Derive it in your shell init:
+
+   ```bash
+   export PI_PACKAGE_DIR="$(dirname "$(dirname "$(grep -om1 '/nix/store/[^ ]*/bin/pi' \
+     "$(readlink -f "$(command -v pi)")")")")/libexec/pi"
+   ```
+
+   That greps the real binary path out of the wrapper, then walks to its `libexec/pi`. Verify with
+   `ls "$PI_PACKAGE_DIR/docs"`.
+
+The store is read-only, so treat `$PI_PACKAGE_DIR` as reference material only. When the npm types and
+the running binary disagree, the binary wins — compare `pi --version` against
+`$PI_PACKAGE_DIR/package.json` before chasing a "missing" API.
 
 ## Using extensions
 
@@ -162,8 +203,10 @@ Once loaded, skills appear as `/skill:<name>` commands inside pi:
 | Name | Description |
 |------|-------------|
 | [commit](skills/commit/SKILL.md) | Creates Conventional Commits-style git commits from staged or specified changes |
-| [jira-project-info](skills/jira-project-info/SKILL.md) | Fetches Jira project, epic, and issue information, with guarded sub-task creation via local `jira-mcp` |
+| [obsidian-cli](skills/obsidian-cli/SKILL.md) | Reads, searches, and safely edits the Obsidian vault at `~/zet` via the `obsidian` CLI |
+| [pi-docs](skills/pi-docs/SKILL.md) | Locates and navigates pi's own docs, source, and bundled examples when working against pi's APIs |
 | [subagent](skills/subagent/SKILL.md) | Spawns an isolated pi process for edits, verification, reviews, research, or other delegated tasks |
+| [web-research](skills/web-research/SKILL.md) | Searches the web and extracts URLs via SearXNG, `gh`, html2markdown, and a headless agent-browser |
 
 ## Prompts
 
