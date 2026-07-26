@@ -219,8 +219,7 @@ Once loaded, skills appear as `/skill:<name>` commands inside pi:
 | Name | Description |
 |------|-------------|
 | [custom-footer](extensions/custom-footer/index.ts) | Compact single-line footer: path + git branch, context usage, model and thinking level |
-| [permission-gate](extensions/permission-gate/index.ts) | Prompts for confirmation before running dangerous bash commands (`rm -rf`, `sudo`, `chmod/chown 777`) |
-| [protected-paths](extensions/protected-paths/index.ts) | Blocks `write` and `edit` tool calls to sensitive paths (`.env`, `.git/`, `node_modules/`) |
+| [protected-paths](extensions/protected-paths/index.ts) | Blocks `write` and `edit` from overwriting an existing `.env` (creating one is allowed) |
 | [system-prompt](extensions/system-prompt/index.ts) | Shows the current system prompt and tool list via `/system-prompt` |
 | [prompt-customizer](extensions/prompt-customizer/index.ts) | Full control over the system prompt via `before_agent_start` — reproduces and exposes every default section for editing |
 
