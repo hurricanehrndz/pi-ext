@@ -15,12 +15,34 @@ description: Spawns pi as a separate subagent process for edits, verification, r
 - Use `pi --print --no-session` so the child has isolated context and returns its result to the orchestrator.
 - Pass a short, simple task as one shell-quoted prompt argument. For a multiline, quote-heavy, code-heavy, or synthesized prompt, write the exact prompt to a private temporary file outside the repository and redirect that file to pi's stdin. Do not squeeze complex prompts into a command argument or tell the child to read the prompt file itself.
 - Remove temporary prompt files after the child exits, including on failure.
-- If the user specifies a model, pass both `--provider <provider>` and `--model <model>`. Use the named provider when supplied. Otherwise, use `pi --list-models "<model>"` to find a configured provider; if both `litellm` and `bifrost` provide it, either is acceptable.
-- If the user specifies an effort or thinking level, pass it with `--thinking <level>`.
-- If no model is specified, inherit pi's configured defaults by omitting `--provider` and `--model`.
+- When the operator explicitly requests or suggests using subagents, get their small/medium/big provider, model, and thinking-effort preferences before spawning the first child. Ask once per operator request and reuse the answers across its tasks and phases.
+- If the operator already supplied one provider/model/effort combination, apply it to every tier unless they distinguish tiers; do not ask again. Accept “same for all” as a complete answer.
+- For autonomous delegation that the operator did not request or suggest, use any tier preferences already given in the conversation; otherwise inherit pi's configured provider/model defaults and choose thinking effort from the task tier.
+- Pass a selected model as both `--provider <provider>` and `--model <model>`. Use the named provider when supplied. Otherwise, use `pi --list-models "<model>"` to find a configured provider.
+- Pass the selected effort or thinking level with `--thinking <level>`. Omit `--provider` and `--model` only when inheriting pi's configured defaults.
 - Give the subagent the capabilities needed for its role. Omit `--tools` when it may edit, implement, verify, or otherwise use pi's normal tools; use an allowlist only when the task must be constrained, such as a read-only review.
 - Do not use `eval` when constructing the command.
 - Report the subagent's result. If the command fails, report its exit status and stderr; do not silently replace it with your own attempt.
+
+## Task Sizing
+
+Classify each delegated task or phase independently and use the smallest tier likely to complete it reliably. Do not size every child from the overall request.
+
+- **Small:** bounded lookup, focused verification, simple isolated edit, or a known command/test. Default when asking: configured provider/model with `low` effort.
+- **Medium:** multi-step investigation, implementation within one component, or a standard code review. Default when asking: configured provider/model with `medium` effort.
+- **Big:** architecture or broad research, cross-cutting implementation, security/high-risk reasoning, or review of a large change. Default when asking: configured provider/model with `high` effort.
+
+For mixed work, split only where phases are genuinely separable, then size each phase. A large parent task may use a big research/planning child, medium implementation child, and small verification child. Do not create extra children merely to exercise every tier.
+
+When tier preferences are required, ask one compact numbered question before delegation:
+
+```text
+Which subagent provider/model/thinking effort should I use?
+1. Small — default: configured provider/model, low
+2. Medium — default: configured provider/model, medium
+3. Big — default: configured provider/model, high
+You can answer each tier or say “same for all: <provider>, <model>, <effort>”.
+```
 
 ## General Usage
 
