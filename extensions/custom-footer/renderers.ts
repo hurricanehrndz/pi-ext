@@ -5,7 +5,7 @@
  * All colors are resolved via theme roles (no hardcoded ANSI).
  */
 
-import type { ThemeColor } from "@earendil-works/pi-coding-agent";
+import type { SessionEntry, ThemeColor } from "@earendil-works/pi-coding-agent";
 import { visibleWidth } from "@earendil-works/pi-tui";
 
 // ── Tokens ─────────────────────────────────────────────────────────────
@@ -38,6 +38,23 @@ export function renderPath(pathRaw: string, budget: number, theme: FooterTheme):
 	if (budget < 8) return "";
 	if (visibleWidth(pathRaw) <= budget) return theme.fg("warning", pathRaw);
 	return theme.fg("warning", "…" + pathRaw.slice(-(budget - 1)));
+}
+
+// ── Cost ───────────────────────────────────────────────────────────────
+
+export function getSessionCost(entries: readonly SessionEntry[]): number {
+	let total = 0;
+	for (const entry of entries) {
+		if (entry.type === "message" && entry.message.role === "assistant") {
+			total += entry.message.usage.cost.total;
+		}
+	}
+	return total;
+}
+
+export function renderCost(cost: number, theme: FooterTheme): { text: string; rawWidth: number } {
+	const raw = `$${cost.toFixed(3)}`;
+	return { text: theme.fg("muted", raw), rawWidth: visibleWidth(raw) };
 }
 
 // ── Context Usage ──────────────────────────────────────────────────────
