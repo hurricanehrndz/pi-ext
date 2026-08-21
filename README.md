@@ -107,11 +107,10 @@ On NixOS (or with Home Manager), `pi` on `$PATH` is a wrapper script, not the re
 The npm package payload — `README.md`, `docs/`, `examples/` — sits in `libexec/pi` under that second
 store path. Two consequences:
 
-1. **`import.meta.resolve("@earendil-works/pi-coding-agent")` does not find it.** Resolution walks up
-   from the extension's own directory, so it lands on `node_modules/` or Bun's global install cache —
-   possibly a *different version* than the binary you are running. `extensions/prompt-customizer`
-   therefore honours `PI_PACKAGE_DIR` first, and re-exports it so nested `pi` subagents and skill
-   scripts inherit the same root.
+1. **`import.meta.resolve("@earendil-works/pi-coding-agent")` may not find the running copy.**
+   Resolution walks up from the caller's directory, so it can land on `node_modules/` or Bun's global
+   install cache — possibly a *different version* than the binary you are running. Use
+   `PI_PACKAGE_DIR` when you need the reference material belonging to the active Nix-installed pi.
 
 2. **Store paths change on every upgrade.** Never hardcode one. Derive it in your shell init:
 
@@ -202,11 +201,10 @@ Once loaded, skills appear as `/skill:<name>` commands inside pi:
 
 | Name | Description |
 |------|-------------|
-| [commit](skills/commit/SKILL.md) | Creates Conventional Commits-style git commits from staged or specified changes |
 | [obsidian-cli](skills/obsidian-cli/SKILL.md) | Reads, searches, and safely edits the Obsidian vault at `~/zet` via the `obsidian` CLI |
 | [pi-docs](skills/pi-docs/SKILL.md) | Locates and navigates pi's own docs, source, and bundled examples when working against pi's APIs |
 | [subagent](skills/subagent/SKILL.md) | Spawns an isolated pi process for edits, verification, reviews, research, or other delegated tasks |
-| [web-research](skills/web-research/SKILL.md) | Searches the web and extracts URLs via SearXNG, `gh`, html2markdown, and a headless agent-browser |
+| [web](skills/web/SKILL.md) | Searches through SearXNG and fetches static Markdown through `gh`, Cloudflare Markdown-for-Agents, or html2markdown |
 
 ## Prompts
 
@@ -221,7 +219,7 @@ Once loaded, skills appear as `/skill:<name>` commands inside pi:
 | [custom-footer](extensions/custom-footer/index.ts) | Compact single-line footer: path + git branch, context usage, cumulative session cost, model and thinking level |
 | [protected-paths](extensions/protected-paths/index.ts) | Blocks `write` and `edit` from overwriting an existing `.env` (creating one is allowed) |
 | [system-prompt](extensions/system-prompt/index.ts) | Shows the current system prompt and tool list via `/system-prompt` |
-| [prompt-customizer](extensions/prompt-customizer/index.ts) | Full control over the system prompt via `before_agent_start` — reproduces and exposes every default section for editing |
+| [web](extensions/web/index.ts) | Provides consent-gated `web_search` and static `web_fetch` tools with bounded output |
 
 ## Creating a new extension
 

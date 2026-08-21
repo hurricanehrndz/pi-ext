@@ -1,10 +1,7 @@
-import { runCommand } from "../../shared/command.js";
-import { isBrowserAvailable, renderUrlWithBrowser } from "./browser.js";
+import { runCommand } from "./command.js";
 import { extractGitHubMarkdown, isGitHubHostUrl, parseGitHubUrl } from "./github.js";
-import { looksLikeJsAppShell } from "./shell-detect.js";
 
-export type ExtractionMethod = "github" | "cloudflare-markdown" | "html2markdown" | "browser";
-export type RenderMode = "auto" | "static" | "browser";
+export type ExtractionMethod = "github" | "cloudflare-markdown" | "html2markdown";
 
 export type ExtractedMarkdown = {
 	url: string;
@@ -17,14 +14,11 @@ export type ExtractedMarkdown = {
 };
 
 export type ExtractMarkdownOptions = {
-	renderMode?: RenderMode;
 	includeSelector?: string;
 	excludeSelector?: string;
 	signal?: AbortSignal;
 	html2markdownCommand?: string;
 	timeoutMs?: number;
-	// Test seam: override browser availability detection.
-	browserAvailable?: () => boolean | Promise<boolean>;
 };
 
 type CloudflareMarkdownAttempt = {
@@ -32,17 +26,11 @@ type CloudflareMarkdownAttempt = {
 	warnings: string[];
 };
 
-type StaticHtmlExtraction = {
-	extracted: ExtractedMarkdown;
-	html: string;
-};
-
 const DEFAULT_HTML2MARKDOWN_COMMAND = "html2markdown";
 
 export async function extractMarkdownFromUrl(url: string, options: ExtractMarkdownOptions = {}): Promise<ExtractedMarkdown> {
 	const parsedUrl = parseHttpUrl(url);
 	const normalizedUrl = parsedUrl.toString();
-	const renderMode = options.renderMode ?? "auto";
 
 	const githubTarget = parseGitHubUrl(normalizedUrl);
 	if (githubTarget !== null) {
@@ -59,17 +47,8 @@ export async function extractMarkdownFromUrl(url: string, options: ExtractMarkdo
 	}
 	if (isGitHubHostUrl(normalizedUrl)) {
 		throw new Error(
-			`Unsupported GitHub URL form: ${normalizedUrl}. Recognized GitHub URLs are repositories, blob files, trees, issues, pull requests, and raw.githubusercontent.com files. GitHub URLs are handled only through gh; no generic HTML/browser fallback will be used.`,
+			`Unsupported GitHub URL form: ${normalizedUrl}. Recognized GitHub URLs are repositories, blob files, trees, issues, pull requests, and raw.githubusercontent.com files. GitHub URLs are handled only through gh; no generic HTML fallback will be used.`,
 		);
-	}
-
-	const browserAvailable = options.browserAvailable ?? (() => isBrowserAvailable());
-
-	if (renderMode === "browser") {
-		if (!(await browserAvailable())) {
-			throw new Error(browserUnavailableMessage("renderMode \"browser\" was requested"));
-		}
-		return extractBrowserMarkdown(normalizedUrl, options, ["Browser rendering requested via renderMode: browser."]);
 	}
 
 	const cloudflare = await tryCloudflareMarkdown(normalizedUrl, options.signal);
@@ -77,44 +56,7 @@ export async function extractMarkdownFromUrl(url: string, options: ExtractMarkdo
 		return cloudflare.extracted;
 	}
 
-	const staticExtraction = await extractStaticHtmlMarkdown(normalizedUrl, options, cloudflare.warnings);
-	if (renderMode === "static") {
-		return staticExtraction.extracted;
-	}
-
-	if (shouldUseBrowserFallback(renderMode, staticExtraction.html, staticExtraction.extracted.markdown)) {
-		if (await browserAvailable()) {
-			return extractBrowserMarkdown(normalizedUrl, options, [
-				...staticExtraction.extracted.warnings,
-				"Browser fallback triggered automatically because static extraction looked like a JavaScript app shell.",
-			]);
-		}
-		return {
-			...staticExtraction.extracted,
-			warnings: [
-				...staticExtraction.extracted.warnings,
-				"Static extraction looked like a JavaScript app shell, but browser rendering is unavailable on this host (agent-browser not found on PATH); returning the static extraction. Browser rendering is enabled only on GUI hosts.",
-			],
-		};
-	}
-
-	return staticExtraction.extracted;
-}
-
-function browserUnavailableMessage(context: string): string {
-	return `${context}, but browser rendering is unavailable on this host: the agent-browser command was not found on PATH. Browser rendering is enabled only on GUI hosts; retry with renderMode "static" or "auto".`;
-}
-
-export function shouldUseBrowserFallback(renderMode: RenderMode, html: string, markdown: string): boolean {
-	if (renderMode === "browser") {
-		return true;
-	}
-
-	if (renderMode === "static") {
-		return false;
-	}
-
-	return looksLikeJsAppShell(html, markdown);
+	return extractStaticHtmlMarkdown(normalizedUrl, options, cloudflare.warnings);
 }
 
 async function tryCloudflareMarkdown(url: string, signal: AbortSignal | undefined): Promise<CloudflareMarkdownAttempt> {
@@ -163,7 +105,7 @@ async function extractStaticHtmlMarkdown(
 	url: string,
 	options: ExtractMarkdownOptions,
 	warnings: string[],
-): Promise<StaticHtmlExtraction> {
+): Promise<ExtractedMarkdown> {
 	const response = await fetch(url, {
 		headers: {
 			Accept: "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
@@ -180,16 +122,13 @@ async function extractStaticHtmlMarkdown(
 	const contentType = response.headers.get("content-type") ?? undefined;
 
 	return {
-		html,
-		extracted: {
-			url,
-			finalUrl,
-			method: "html2markdown",
-			markdown,
-			status: response.status,
-			contentType,
-			warnings,
-		},
+		url,
+		finalUrl,
+		method: "html2markdown",
+		markdown,
+		status: response.status,
+		contentType,
+		warnings,
 	};
 }
 
@@ -219,26 +158,6 @@ export function buildHtml2MarkdownArgs(domainUrl: string, options: Pick<ExtractM
 	}
 
 	return args;
-}
-
-async function extractBrowserMarkdown(
-	url: string,
-	options: ExtractMarkdownOptions,
-	warnings: string[],
-): Promise<ExtractedMarkdown> {
-	const rendered = await renderUrlWithBrowser(url, {
-		timeoutMs: options.timeoutMs,
-		signal: options.signal,
-	});
-	const markdown = await htmlToMarkdown(rendered.html, rendered.url, options);
-
-	return {
-		url,
-		finalUrl: rendered.url,
-		method: "browser",
-		markdown,
-		warnings: [...warnings, ...rendered.warnings],
-	};
 }
 
 function parseHttpUrl(input: string): URL {

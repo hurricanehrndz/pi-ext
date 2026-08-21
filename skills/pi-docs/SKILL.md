@@ -11,13 +11,13 @@ since the API surface moves between releases.
 
 ## Finding the docs
 
-The `prompt-customizer` extension resolves the package root and exports it:
+If `PI_PACKAGE_DIR` points to the package used by the running pi, inspect it directly:
 
 ```bash
 ls "$PI_PACKAGE_DIR/docs"
 ```
 
-If `PI_PACKAGE_DIR` is unset (the extension is not loaded), resolve it from the installed package:
+Otherwise, resolve the installed package from the current project:
 
 ```bash
 bun -e 'console.log(Bun.fileURLToPath(import.meta.resolve("@earendil-works/pi-coding-agent")))'
@@ -42,9 +42,6 @@ if an API appears to be missing.
   ```bash
   grep -rl "registerCommand" "$PI_PACKAGE_DIR/examples/extensions" | head
   ```
-
-- `examples/extensions/prompt-customizer.ts` is upstream's version of this repo's extension; check it
-  after a pi upgrade to see whether the prompt structure changed.
 
 ## Where things are
 

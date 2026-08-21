@@ -6,11 +6,7 @@ import { join } from "node:path";
 import { Type } from "typebox";
 
 import { getWebConfig } from "./config.js";
-import {
-	extractMarkdownFromUrl,
-	type ExtractionMethod,
-	type RenderMode,
-} from "./extraction.js";
+import { extractMarkdownFromUrl, type ExtractionMethod } from "./extraction.js";
 import { formatFetchedMarkdown, formatSearchResultsMarkdown, truncateForToolOutput } from "./format.js";
 import { searchSearxng, type SearchTimeRange, type WebSearchResult } from "./search.js";
 
@@ -30,12 +26,11 @@ const WebSearchParams = Type.Object({
 	timeRange: Type.Optional(StringEnum(["day", "week", "month", "year"] as const)),
 });
 
-const WebFetchMarkdownParams = Type.Object({
+const WebFetchParams = Type.Object({
 	url: Type.String({ description: "URL to fetch and convert to Markdown" }),
 	userRequestReason: Type.String({
 		description: "Briefly state the user's explicit request that authorizes reading this web URL",
 	}),
-	renderMode: Type.Optional(StringEnum(["auto", "static", "browser"] as const)),
 	includeSelector: Type.Optional(Type.String({ description: "Optional CSS selector to include for html2markdown conversion" })),
 	excludeSelector: Type.Optional(Type.String({ description: "Optional CSS selector to exclude for html2markdown conversion" })),
 });
@@ -57,12 +52,11 @@ type WebSearchDetails = {
 	truncation: ToolTruncationDetails;
 };
 
-type WebFetchMarkdownDetails = {
+type WebFetchDetails = {
 	url: string;
 	finalUrl?: string;
 	userRequestReason: string;
 	params: {
-		renderMode: RenderMode;
 		includeSelector?: string;
 		excludeSelector?: string;
 	};
@@ -86,25 +80,25 @@ type ToolTruncationDetails = {
 
 export default function webExtension(pi: ExtensionAPI) {
 	pi.registerTool({
-		name: "internet_search",
+		name: "web_search",
 		label: "Web Search",
 		description: "Search the public web through SearXNG when the user explicitly requests web or current external information.",
 		promptSnippet: "Search the public web through SearXNG only when the user explicitly asks for web/current information",
 		promptGuidelines: [
-			"Use internet_search only when the user explicitly asks for web search, current web information, or finding external web pages.",
-			"Do not use internet_search speculatively when local files, provided context, or repository search are sufficient.",
-			"When using internet_search, set userRequestReason to the user's explicit web-search directive.",
+			"Use web_search only when the user explicitly asks for web search, current web information, or finding external web pages.",
+			"Do not use web_search speculatively when local files, provided context, or repository search are sufficient.",
+			"When using web_search, set userRequestReason to the user's explicit web-search directive.",
 		],
 		parameters: WebSearchParams,
 		async execute(_toolCallId, params, signal) {
 			const query = params.query.trim();
 			if (query.length === 0) {
-				throw new Error("internet_search query must not be empty");
+				throw new Error("web_search query must not be empty");
 			}
 
 			const userRequestReason = params.userRequestReason.trim();
 			if (userRequestReason.length === 0) {
-				throw new Error("internet_search userRequestReason must state the user's explicit web-search request");
+				throw new Error("web_search userRequestReason must state the user's explicit web-search request");
 			}
 
 			const config = getWebConfig();
@@ -159,48 +153,45 @@ export default function webExtension(pi: ExtensionAPI) {
 	});
 
 	pi.registerTool({
-		name: "web_fetch_markdown",
-		label: "Web Fetch Markdown",
-		description: "Fetch a user-requested URL and convert it to Markdown through GitHub, Cloudflare markdown, or html2markdown extraction.",
-		promptSnippet: "Fetch a user-requested URL and convert it to Markdown using GitHub/Cloudflare/html2markdown/browser extraction",
+		name: "web_fetch",
+		label: "Web Fetch",
+		description: "Fetch a user-requested URL as Markdown through GitHub, Cloudflare Markdown-for-Agents, or static HTML extraction.",
+		promptSnippet: "Fetch a user-requested URL as Markdown using GitHub, Cloudflare Markdown-for-Agents, or static HTML extraction",
 		promptGuidelines: [
-			"Use web_fetch_markdown only when the user explicitly asks to read, inspect, summarize, or extract a URL or website.",
-			"Do not use web_fetch_markdown speculatively when local files or provided context are sufficient.",
-			"Use web_fetch_markdown for URLs returned by internet_search only when the original user request asked for web research or URL inspection.",
-			"When using web_fetch_markdown, set userRequestReason to the user's explicit URL-reading directive.",
+			"Use web_fetch only when the user explicitly asks to read, inspect, summarize, or extract a URL or website.",
+			"Do not use web_fetch speculatively when local files or provided context are sufficient.",
+			"Use web_fetch for URLs returned by web_search only when the original user request asked for web research or URL inspection.",
+			"When using web_fetch, set userRequestReason to the user's explicit URL-reading directive.",
 		],
-		parameters: WebFetchMarkdownParams,
+		parameters: WebFetchParams,
 		async execute(_toolCallId, params, signal) {
 			const rawUrl = params.url.trim();
 			if (rawUrl.length === 0) {
-				throw new Error("web_fetch_markdown url must not be empty");
+				throw new Error("web_fetch url must not be empty");
 			}
 			const url = normalizeHttpUrl(rawUrl);
 
 			const userRequestReason = params.userRequestReason.trim();
 			if (userRequestReason.length === 0) {
-				throw new Error("web_fetch_markdown userRequestReason must state the user's explicit URL-reading request");
+				throw new Error("web_fetch userRequestReason must state the user's explicit URL-reading request");
 			}
 
-			const renderMode = params.renderMode ?? "auto";
 			const includeSelector = cleanOptionalString(params.includeSelector);
 			const excludeSelector = cleanOptionalString(params.excludeSelector);
 			const extracted = await extractMarkdownFromUrl(url, {
-				renderMode,
 				includeSelector,
 				excludeSelector,
 				signal,
 			});
 
 			const markdown = formatFetchedMarkdown(extracted);
-			const output = await prepareToolOutput(markdown, "web-fetch-markdown");
+			const output = await prepareToolOutput(markdown, "web-fetch");
 
-			const details: WebFetchMarkdownDetails = {
+			const details: WebFetchDetails = {
 				url: extracted.url,
 				finalUrl: extracted.finalUrl,
 				userRequestReason,
 				params: {
-					renderMode,
 					includeSelector,
 					excludeSelector,
 				},

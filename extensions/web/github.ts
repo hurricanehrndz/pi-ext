@@ -1,6 +1,6 @@
 import { Buffer } from "node:buffer";
 
-import { runCommand } from "../../shared/command.js";
+import { runCommand } from "./command.js";
 
 export type GitHubTarget =
 	| { kind: "repo"; owner: string; repo: string }
@@ -359,7 +359,7 @@ function formatGhError(command: string, endpoint: string, error: unknown): Error
 	}
 
 	return new Error(
-		`gh api ${endpoint} failed while running ${command}. GitHub URLs are handled only through gh; no generic HTML/browser fallback will be used.\n${message}`,
+		`gh api ${endpoint} failed while running ${command}. GitHub URLs are handled only through gh; no generic HTML fallback will be used.\n${message}`,
 	);
 }
 

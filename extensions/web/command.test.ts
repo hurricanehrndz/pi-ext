@@ -19,4 +19,17 @@ describe("runCommand", () => {
 	test("throws on non-zero exit", async () => {
 		await expect(runCommand({ command: "false", args: [] })).rejects.toThrow("exit code 1");
 	});
+
+	test("rejects before spawning when already aborted", async () => {
+		const controller = new AbortController();
+		controller.abort();
+
+		await expect(runCommand({ command: "printf", args: ["never"], signal: controller.signal })).rejects.toThrow(
+			"aborted before start",
+		);
+	});
+
+	test("terminates a command that exceeds its timeout", async () => {
+		await expect(runCommand({ command: "sleep", args: ["1"], timeoutMs: 10 })).rejects.toThrow("timed out after 10ms");
+	});
 });

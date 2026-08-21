@@ -1,43 +1,76 @@
-import { describe, expect, test } from "bun:test";
+import { afterEach, describe, expect, test } from "bun:test";
+import { chmod, mkdtemp, writeFile } from "node:fs/promises";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 
-import { buildHtml2MarkdownArgs, extractMarkdownFromUrl, shouldUseBrowserFallback } from "./extraction.js";
+import { buildHtml2MarkdownArgs, extractMarkdownFromUrl } from "./extraction.js";
 
-describe("shouldUseBrowserFallback", () => {
-	test("does not use browser fallback when renderMode is static, even for app-shell HTML", () => {
-		const html = `<!doctype html><html><body><div id="root"></div><script type="module" src="/main.js"></script></body></html>`;
+const originalFetch = globalThis.fetch;
 
-		expect(shouldUseBrowserFallback("static", html, "Loading...")).toBe(false);
-	});
-
-	test("uses browser fallback when renderMode is browser", () => {
-		expect(shouldUseBrowserFallback("browser", "<html><body>Article text</body></html>", "Article text")).toBe(true);
-	});
-
-	test("uses browser fallback in auto mode for app-shell HTML", () => {
-		const html = `<!doctype html><html><body><div id="app"></div><script type="module" src="/main.js"></script></body></html>`;
-
-		expect(shouldUseBrowserFallback("auto", html, "Loading...")).toBe(true);
-	});
-
-	test("does not use browser fallback in auto mode for static article HTML", () => {
-		const paragraph = "Useful static article content. ".repeat(30);
-		const html = `<html><body><article><p>${paragraph}</p></article></body></html>`;
-
-		expect(shouldUseBrowserFallback("auto", html, paragraph)).toBe(false);
-	});
+afterEach(() => {
+	globalThis.fetch = originalFetch;
 });
 
 describe("extractMarkdownFromUrl", () => {
 	test("rejects unsupported GitHub URL forms instead of falling back to static HTML", async () => {
-		await expect(extractMarkdownFromUrl("https://github.com/CeramicTeam/html-to-markdown/v2", { renderMode: "static" })).rejects.toThrow(
+		await expect(extractMarkdownFromUrl("https://github.com/CeramicTeam/html-to-markdown/v2")).rejects.toThrow(
 			"Unsupported GitHub URL form",
 		);
 	});
 
-	test("errors before fetching when renderMode browser is requested but the browser is unavailable", async () => {
-		await expect(
-			extractMarkdownFromUrl("https://example.com", { renderMode: "browser", browserAvailable: () => false }),
-		).rejects.toThrow("agent-browser command was not found on PATH");
+	test("uses Cloudflare Markdown-for-Agents when available", async () => {
+		let requestCount = 0;
+		globalThis.fetch = (async (_input: string | URL | Request, init?: RequestInit) => {
+			requestCount += 1;
+			expect(new Headers(init?.headers).get("accept")).toBe("text/markdown");
+			return new Response("# Cloudflare Markdown", {
+				status: 200,
+				headers: { "content-type": "text/markdown", "x-markdown-tokens": "3" },
+			});
+		}) as unknown as typeof fetch;
+
+		const extracted = await extractMarkdownFromUrl("https://example.com/docs");
+
+		expect(requestCount).toBe(1);
+		expect(extracted.method).toBe("cloudflare-markdown");
+		expect(extracted.markdown).toBe("# Cloudflare Markdown");
+		expect(extracted.warnings).toEqual(["x-markdown-tokens: 3"]);
+	});
+
+	test("falls back to static HTML and html2markdown", async () => {
+		const dir = await mkdtemp(join(tmpdir(), "fake-html2markdown-"));
+		const command = join(dir, "html2markdown");
+		await writeFile(command, "#!/bin/sh\ncat\n");
+		await chmod(command, 0o755);
+
+		const responses = [
+			new Response("<html><body>initial response</body></html>", {
+				status: 200,
+				headers: { "content-type": "text/html" },
+			}),
+			new Response("<html><body><main>Static article</main></body></html>", {
+				status: 200,
+				headers: { "content-type": "text/html" },
+			}),
+		];
+		globalThis.fetch = (async () => {
+			const response = responses.shift();
+			if (response === undefined) {
+				throw new Error("unexpected fetch");
+			}
+			return response;
+		}) as unknown as typeof fetch;
+
+		const extracted = await extractMarkdownFromUrl("https://example.com/article", {
+			html2markdownCommand: command,
+			includeSelector: "main",
+			excludeSelector: "nav",
+		});
+
+		expect(responses).toHaveLength(0);
+		expect(extracted.method).toBe("html2markdown");
+		expect(extracted.markdown).toContain("Static article");
+		expect(extracted.contentType).toBe("text/html");
 	});
 });
 
