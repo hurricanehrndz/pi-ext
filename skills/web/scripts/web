@@ -1,4 +1,7 @@
-#!/usr/bin/env python3
+#!/usr/bin/env -S uv run --script
+# /// script
+# requires-python = "==3.14.7"
+# ///
 """Consent-gated static web search and Markdown extraction CLI."""
 
 from __future__ import annotations
@@ -21,7 +24,7 @@ import urllib.error
 import urllib.parse
 import urllib.request
 from dataclasses import dataclass
-from typing import Any, Mapping, Sequence
+from typing import Any, BinaryIO, Mapping, Sequence, cast
 
 DEFAULT_SEARCH_BASE_URL = "https://search.hrndz.ca"
 DEFAULT_TIMEOUT = 20.0
@@ -283,7 +286,7 @@ def search(args: argparse.Namespace) -> str:
         lines.append(f"{index}. [{title}]({result['url']})")
         metadata: list[str] = []
         engines = result["engines"]
-        if engines:
+        if isinstance(engines, list) and engines:
             metadata.append("Source: " + ", ".join(str(item) for item in engines))
         for key, label in (("category", "Category"), ("score", "Score"), ("published", "Published")):
             if key in result:
@@ -444,12 +447,12 @@ def _run_command_posix(
                 failure = ("pipe", clean_snippet(error))
                 break
             for key, _ in events:
-                stream = key.fileobj
+                selected_stream = cast(BinaryIO, key.fileobj)
                 name = key.data
                 if name == "stdin":
                     assert input_bytes is not None
                     try:
-                        written = os.write(stream.fileno(), input_bytes[input_offset : input_offset + IO_CHUNK_SIZE])
+                        written = os.write(selected_stream.fileno(), input_bytes[input_offset : input_offset + IO_CHUNK_SIZE])
                     except BrokenPipeError:
                         written = 0
                         input_offset = len(input_bytes)
@@ -459,21 +462,21 @@ def _run_command_posix(
                     else:
                         input_offset += written
                     if input_offset >= len(input_bytes) or written == 0:
-                        selector.unregister(stream)
-                        _close_pipe(stream)
+                        selector.unregister(selected_stream)
+                        _close_pipe(selected_stream)
                     continue
 
                 available = limits[name] + 1 - len(buffers[name])
                 try:
-                    chunk = os.read(stream.fileno(), min(IO_CHUNK_SIZE, available))
+                    chunk = os.read(selected_stream.fileno(), min(IO_CHUNK_SIZE, available))
                 except BlockingIOError:
                     continue
                 except OSError as error:
                     failure = ("pipe", clean_snippet(error))
                     break
                 if not chunk:
-                    selector.unregister(stream)
-                    _close_pipe(stream)
+                    selector.unregister(selected_stream)
+                    _close_pipe(selected_stream)
                     continue
                 buffers[name].extend(chunk)
                 if len(buffers[name]) > limits[name]:
@@ -497,9 +500,10 @@ def _run_command_posix(
     elif failure[0] == "timeout":
         raise WebError(f"Command {command} timed out after {timeout:g} seconds")
     elif failure[0] == "overflow":
-        name = failure[1]
-        limit = stdout_limit if name == "stdout" else stderr_limit
-        raise WebError(f"Command {command} {name} exceeds the {limit}-byte limit")
+        failed_stream = failure[1]
+        assert failed_stream is not None
+        limit = stdout_limit if failed_stream == "stdout" else stderr_limit
+        raise WebError(f"Command {command} {failed_stream} exceeds the {limit}-byte limit")
     else:
         raise WebError(f"Command {command} pipe failed: {failure[1]}")
 
@@ -659,8 +663,8 @@ def github_markdown(target: GitHubTarget, timeout: float) -> str:
             lines.extend([fence + language, content, fence])
         return "\n".join(lines)
     if target.kind == "tree":
-        payload = gh_api(contents_endpoint(target), timeout)
-        entries = records(payload, "repository directory listing") if isinstance(payload, list) else [record(payload, "repository content")]
+        tree_payload = gh_api(contents_endpoint(target), timeout)
+        entries = records(tree_payload, "repository directory listing") if isinstance(tree_payload, list) else [record(tree_payload, "repository content")]
         title_path = target.path or "."
         lines = [f"# {target.owner}/{target.repo}/{title_path}", "", f"Ref: {target.ref}", "", "## Directory listing", ""]
         for entry in entries[:200]:
@@ -679,7 +683,7 @@ def github_markdown(target: GitHubTarget, timeout: float) -> str:
         raw_labels = issue.get("labels", [])
         labels = [item.strip() for item in raw_labels if isinstance(item, str) and item.strip()] if isinstance(raw_labels, list) else []
         if isinstance(raw_labels, list):
-            labels.extend(name for item in raw_labels if isinstance(item, dict) and (name := string(item, "name")))
+            labels.extend(label_name for item in raw_labels if isinstance(item, dict) and (label_name := string(item, "name")))
         for label, value in (("State", string(issue, "state")), ("Author", nested_string(issue, "user", "login")), ("URL", string(issue, "html_url")), ("Labels", ", ".join(labels) or None)):
             if value:
                 lines.append(f"{label}: {value}")

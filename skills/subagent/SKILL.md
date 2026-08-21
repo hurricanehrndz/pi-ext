@@ -5,36 +5,74 @@ description: Spawns pi as a separate subagent process for edits, verification, r
 
 # Subagent
 
-“Subagent” means a separate `pi` process spawned by the current pi orchestrator. The orchestrator may delegate edits, implementation, verification, review, research, or any other bounded task it deems useful.
+“Subagent” means a separate `pi` process spawned by the current pi orchestrator.
+The orchestrator may delegate edits, implementation, verification, review,
+research, or any other bounded task it deems useful.
 
 ## Rules
 
-- Delegate the requested task to the subagent instead of doing that task in the orchestrator's context.
-- Prefer serial delegation: one subagent at a time, each finished before the next starts. This keeps the work reviewable and stops children racing on the same files. Fanning out is the exception — reserve it for genuinely independent pieces where waiting is the real cost, and say why before doing it.
+- Delegate the requested task to the subagent instead of doing that task in the
+  orchestrator's context.
+- Prefer serial delegation: one subagent at a time, each finished before the
+  next starts. This keeps the work reviewable and stops children racing on the
+  same files. Fanning out is the exception — reserve it for genuinely
+  independent pieces where waiting is the real cost, and say why before doing
+  it.
 - Run the subagent from the directory relevant to the task.
-- Use `pi --print --no-session` so the child has isolated context and returns its result to the orchestrator.
-- Pass a short, simple task as one shell-quoted prompt argument. For a multiline, quote-heavy, code-heavy, or synthesized prompt, write the exact prompt to a private temporary file outside the repository and redirect that file to pi's stdin. Do not squeeze complex prompts into a command argument or tell the child to read the prompt file itself.
+- Use `pi --print --no-session` so the child has isolated context and returns
+  its result to the orchestrator.
+- Pass a short, simple task as one shell-quoted prompt argument. For a
+  multiline, quote-heavy, code-heavy, or synthesized prompt, write the exact
+  prompt to a private temporary file outside the repository and redirect that
+  file to pi's stdin. Do not squeeze complex prompts into a command argument or
+  tell the child to read the prompt file itself.
 - Remove temporary prompt files after the child exits, including on failure.
-- When the operator explicitly requests or suggests using subagents, get their small/medium/big provider, model, and thinking-effort preferences before spawning the first child. Ask once per operator request and reuse the answers across its tasks and phases.
-- If the operator already supplied one provider/model/effort combination, apply it to every tier unless they distinguish tiers; do not ask again. Accept “same for all” as a complete answer.
-- For autonomous delegation that the operator did not request or suggest, use any tier preferences already given in the conversation; otherwise inherit pi's configured provider/model defaults and choose thinking effort from the task tier.
-- Pass a selected model as both `--provider <provider>` and `--model <model>`. Use the named provider when supplied. Otherwise, use `pi --list-models "<model>"` to find a configured provider.
-- Pass the selected effort or thinking level with `--thinking <level>`. Omit `--provider` and `--model` only when inheriting pi's configured defaults.
-- Give the subagent the capabilities needed for its role. Omit `--tools` when it may edit, implement, verify, or otherwise use pi's normal tools; use an allowlist only when the task must be constrained, such as a read-only review.
+- When the operator explicitly requests or suggests using subagents, get their
+  small/medium/big provider, model, and thinking-effort preferences before
+  spawning the first child. Ask once per operator request and reuse the answers
+  across its tasks and phases.
+- If the operator already supplied one provider/model/effort combination, apply
+  it to every tier unless they distinguish tiers; do not ask again. Accept “same
+  for all” as a complete answer.
+- For autonomous delegation that the operator did not request or suggest, use
+  any tier preferences already given in the conversation; otherwise inherit pi's
+  configured provider/model defaults and choose thinking effort from the task
+  tier.
+- Pass a selected model as both `--provider <provider>` and `--model <model>`.
+  Use the named provider when supplied. Otherwise, use
+  `pi --list-models "<model>"` to find a configured provider.
+- Pass the selected effort or thinking level with `--thinking <level>`. Omit
+  `--provider` and `--model` only when inheriting pi's configured defaults.
+- Give the subagent the capabilities needed for its role. Omit `--tools` when it
+  may edit, implement, verify, or otherwise use pi's normal tools; use an
+  allowlist only when the task must be constrained, such as a read-only review.
 - Do not use `eval` when constructing the command.
-- Report the subagent's result. If the command fails, report its exit status and stderr; do not silently replace it with your own attempt.
+- Report the subagent's result. If the command fails, report its exit status and
+  stderr; do not silently replace it with your own attempt.
 
 ## Task Sizing
 
-Classify each delegated task or phase independently and use the smallest tier likely to complete it reliably. Do not size every child from the overall request.
+Classify each delegated task or phase independently and use the smallest tier
+likely to complete it reliably. Do not size every child from the overall
+request.
 
-- **Small:** bounded lookup, focused verification, simple isolated edit, or a known command/test. Default when asking: configured provider/model with `low` effort.
-- **Medium:** multi-step investigation, implementation within one component, or a standard code review. Default when asking: configured provider/model with `medium` effort.
-- **Big:** architecture or broad research, cross-cutting implementation, security/high-risk reasoning, or review of a large change. Default when asking: configured provider/model with `high` effort.
+- **Small:** bounded lookup, focused verification, simple isolated edit, or a
+  known command/test. Default when asking: configured provider/model with `low`
+  effort.
+- **Medium:** multi-step investigation, implementation within one component, or
+  a standard code review. Default when asking: configured provider/model with
+  `medium` effort.
+- **Big:** architecture or broad research, cross-cutting implementation,
+  security/high-risk reasoning, or review of a large change. Default when
+  asking: configured provider/model with `high` effort.
 
-For mixed work, split only where phases are genuinely separable, then size each phase. A large parent task may use a big research/planning child, medium implementation child, and small verification child. Do not create extra children merely to exercise every tier.
+For mixed work, split only where phases are genuinely separable, then size each
+phase. A large parent task may use a big research/planning child, medium
+implementation child, and small verification child. Do not create extra children
+merely to exercise every tier.
 
-When tier preferences are required, ask one compact numbered question before delegation:
+When tier preferences are required, ask one compact numbered question before
+delegation:
 
 ```text
 Which subagent provider/model/thinking effort should I use?
@@ -46,7 +84,10 @@ You can answer each tier or say “same for all: <provider>, <model>, <effort>�
 
 ## General Usage
 
-Treat caller arguments (`$@`) as the delegated task. Pi supplies skill arguments as conversation text, not shell positional parameters: substitute them for `<task>` before running this command through bash; do not pass literal `$@` or `<task>`.
+Treat caller arguments (`$@`) as the delegated task. Pi supplies skill arguments
+as conversation text, not shell positional parameters: substitute them for
+`<task>` before running this command through bash; do not pass literal `$@` or
+`<task>`.
 
 For a short, simple task:
 
@@ -57,13 +98,17 @@ pi --print --no-session \
   "<task>"
 ```
 
-Replace or omit the bracketed optional arguments rather than passing literal brackets. Shell-quote the task as data and preserve it as one prompt argument.
+Replace or omit the bracketed optional arguments rather than passing literal
+brackets. Shell-quote the task as data and preserve it as one prompt argument.
 
 For a complex prompt:
 
-1. Run `mktemp "${TMPDIR:-/tmp}/pi-subagent-prompt.XXXXXX"` and keep the returned path.
-2. Use the `write` tool to put the exact delegated prompt at that path; do not construct it through shell interpolation. The file created by `mktemp` is private to the current user.
-3. Substitute the returned path for `<prompt-file>` and run:
+1. Run `mktemp "${TMPDIR:-/tmp}/pi-subagent-prompt.XXXXXX"` and keep the
+   returned path.
+1. Use the `write` tool to put the exact delegated prompt at that path; do not
+   construct it through shell interpolation. The file created by `mktemp` is
+   private to the current user.
+1. Substitute the returned path for `<prompt-file>` and run:
 
 ```bash
 prompt_file="<prompt-file>"
@@ -74,7 +119,8 @@ pi --print --no-session \
   < "$prompt_file"
 ```
 
-Pi merges piped stdin into its initial prompt. Do not also pass the prompt as an argument.
+Pi merges piped stdin into its initial prompt. Do not also pass the prompt as an
+argument.
 
 Examples:
 
@@ -92,8 +138,10 @@ When the delegated task is code review:
 
 - Do not inspect or review the code in the orchestrator; let the subagent do it.
 - Give the child read-only tools: `read,grep,find,ls,bash`.
-- Explicitly restrict bash to read-only inspection such as `git diff`, `git log`, and `git show`.
-- Ask it to check bugs and logic errors, security issues, and error-handling gaps.
+- Explicitly restrict bash to read-only inspection such as `git diff`,
+  `git log`, and `git show`.
+- Ask it to check bugs and logic errors, security issues, and error-handling
+  gaps.
 
 ```bash
 pi --print --no-session \
@@ -103,18 +151,34 @@ pi --print --no-session \
   "Act as a read-only code reviewer. Review this scope: <review-scope>. Inspect the code yourself; the parent orchestrator will not inspect it. Look for bugs and logic errors, security issues, and error-handling gaps. Use bash only for read-only inspection commands; do not modify files or run destructive commands. Report actionable findings with severity, file paths, and line numbers. If there are no findings, say so explicitly."
 ```
 
-Substitute the caller's review scope for `<review-scope>` before invoking the command.
+Substitute the caller's review scope for `<review-scope>` before invoking the
+command.
 
 ## Long-running and Two-Way Tasks
 
-For normal one-shot delegation, do not add tmux: the bash invocation already exposes output and cancellation. For a long-running subagent that needs human-visible monitoring or follow-up messages, run a persistent interactive pi session in tmux instead of `pi --print`.
+For normal one-shot delegation, do not add tmux: the bash invocation already
+exposes output and cancellation. For a long-running subagent that needs
+human-visible monitoring or follow-up messages, run a persistent interactive pi
+session in tmux instead of `pi --print`.
 
-For programmatic two-way communication, use pi's native `pi --mode rpc` JSONL protocol over the child's stdin/stdout. It supports prompts, steering, follow-ups, aborts, responses, and streamed events. Keep the process in tmux when it must survive beyond one bash tool call, and use a small Bun client or the bundled subagent extension when lifecycle management becomes non-trivial.
+For programmatic two-way communication, use pi's native `pi --mode rpc` JSONL
+protocol over the child's stdin/stdout. It supports prompts, steering,
+follow-ups, aborts, responses, and streamed events. Keep the process in tmux
+when it must survive beyond one bash tool call, and use a small Bun client or
+the bundled subagent extension when lifecycle management becomes non-trivial.
 
-A named pipe is one-way. Two-way RPC can technically be transported through two FIFOs—one for commands and one for responses/events—but both ends must remain open and be drained concurrently or they can block, deadlock, or deliver EOF. Do not build an ad hoc FIFO protocol; use direct RPC pipes unless filesystem pipe endpoints are explicitly required.
+A named pipe is one-way. Two-way RPC can technically be transported through two
+FIFOs—one for commands and one for responses/events—but both ends must remain
+open and be drained concurrently or they can block, deadlock, or deliver EOF. Do
+not build an ad hoc FIFO protocol; use direct RPC pipes unless filesystem pipe
+endpoints are explicitly required.
 
-If richer orchestration becomes necessary, start from pi's bundled `examples/extensions/subagent/` and follow the current pi extension and RPC documentation rather than expanding this skill into an ad hoc process manager.
+If richer orchestration becomes necessary, start from pi's bundled
+`examples/extensions/subagent/` and follow the current pi extension and RPC
+documentation rather than expanding this skill into an ad hoc process manager.
 
 ## Maintenance
 
-This skill lives in the `pi-ext` repo at `skills/subagent/`. If you find a bug while using it, fix it and commit the change to the repo first, before relying on the skill further.
+This skill lives in the `pi-ext` repo at `skills/subagent/`. If you find a bug
+while using it, fix it and commit the change to the repo first, before relying
+on the skill further.

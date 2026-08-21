@@ -1,0 +1,20 @@
+[formatter.mdformat]
+command = "uv"
+includes = [
+  "README.md",
+  "AGENTS.md",
+  "skills/*/SKILL.md",
+]
+options = [
+  "run",
+  "mdformat",
+  "--wrap",
+  "80",
+  "--end-of-line",
+  "lf",
+  "--extensions",
+  "frontmatter",
+  "--extensions",
+  "gfm",
+  "--compact-tables",
+]

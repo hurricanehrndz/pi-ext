@@ -1,0 +1,6 @@
+{
+  // Skill frontmatter is deliberately single-line, and tables and literal
+  // commands may exceed the prose wrap width. mdformat still wraps prose.
+  "default": true,
+  "MD013": false
+}

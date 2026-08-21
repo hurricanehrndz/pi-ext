@@ -18,8 +18,9 @@
     "@earendil-works/pi-tui": "*"
   },
   "devDependencies": {
-    "typescript": "^5.0.0",
-    "@types/bun": "latest"
+    "typescript": "5.9.3",
+    "@types/bun": "1.3.13",
+    "markdownlint-cli": "0.41.0"
   },
   "bin": {
     "agent-toolkit": "./scripts/agent-toolkit.ts"

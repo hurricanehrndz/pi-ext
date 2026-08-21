@@ -12,10 +12,12 @@ import pathlib
 import subprocess
 import sys
 import tempfile
+import tomllib
 import unittest
 from unittest import mock
 
 SCRIPT = pathlib.Path(__file__).with_name("web")
+REPO_ROOT = SCRIPT.parents[3]
 LOADER = importlib.machinery.SourceFileLoader("pi_ext_web", str(SCRIPT))
 SPEC = importlib.util.spec_from_loader(LOADER.name, LOADER)
 assert SPEC is not None
@@ -86,9 +88,31 @@ class ArgumentTests(unittest.TestCase):
             with self.subTest(argv=argv), self.assertRaises(SystemExit), contextlib.redirect_stderr(io.StringIO()):
                 web.main(argv)
 
-    def test_cli_file_is_executable_and_has_python_shebang(self):
+    def test_development_configuration_pins_toolset_and_python_exactly(self):
+        mise = tomllib.loads((REPO_ROOT / "mise.toml").read_text())
+        self.assertEqual(
+            mise["tools"],
+            {
+                "bun": "1.3.13",
+                "python": "3.14.7",
+                "uv": "0.11.21",
+                "aqua:numtide/treefmt": "2.5.0",
+                "aqua:j178/prek": "0.4.12",
+            },
+        )
+        self.assertTrue(mise["settings"]["locked"])
+        self.assertIn("uv sync --python 3.14.7 --locked", mise["tasks"]["setup"]["run"])
+        project = tomllib.loads((REPO_ROOT / "pyproject.toml").read_text())
+        self.assertEqual(project["project"]["requires-python"], "==3.14.7")
+        self.assertEqual(project["tool"]["mypy"]["python_version"], "3.14")
+        self.assertIn('requires-python = "==3.14.7"', (REPO_ROOT / "uv.lock").read_text().splitlines()[:4])
+
+    def test_cli_file_is_executable_and_has_exact_uv_python_pin(self):
         self.assertTrue(SCRIPT.stat().st_mode & 0o111)
-        self.assertEqual(SCRIPT.read_text().splitlines()[0], "#!/usr/bin/env python3")
+        lines = SCRIPT.read_text().splitlines()
+        self.assertEqual(lines[0], "#!/usr/bin/env -S uv run --script")
+        self.assertEqual(lines[1:4], ['# /// script', '# requires-python = "==3.14.7"', '# ///'])
+        self.assertEqual(sys.version_info[:3], (3, 14, 7))
 
     def test_help_works_through_an_installed_skill_symlink(self):
         with tempfile.TemporaryDirectory() as directory:
@@ -99,7 +123,12 @@ class ArgumentTests(unittest.TestCase):
                 text=True,
                 capture_output=True,
                 timeout=5,
-                env={**os.environ, "PYTHONDONTWRITEBYTECODE": "1"},
+                env={
+                    **os.environ,
+                    "PYTHONDONTWRITEBYTECODE": "1",
+                    "UV_PYTHON": sys.executable,
+                    "UV_PYTHON_DOWNLOADS": "never",
+                },
             )
         self.assertEqual(result.returncode, 0, result.stderr)
         self.assertIn("usage:", result.stdout.lower())

@@ -1,0 +1,21 @@
+repos:
+  - repo: local
+    hooks:
+      - id: treefmt
+        name: treefmt
+        entry: mise exec -- treefmt
+        language: system
+        files: ^((README|AGENTS)\.md|skills/[^/]+/SKILL\.md)$
+        require_serial: true
+      - id: markdownlint
+        name: markdownlint
+        entry: mise exec -- bun x markdownlint --config .markdownlint.jsonc
+        language: system
+        files: ^((README|AGENTS)\.md|skills/[^/]+/SKILL\.md)$
+        require_serial: true
+      - id: mypy-skill-scripts
+        name: mypy skill Python scripts
+        entry: mise run typecheck:python
+        language: system
+        pass_filenames: false
+        files: ^(skills/web/scripts/web|pyproject\.toml|uv\.lock|mise\.toml|treefmt\.toml|\.pre-commit-config\.yaml)$
