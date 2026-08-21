@@ -8,9 +8,9 @@ Skills.
 - `extensions/<name>/index.ts` is delivered through `package.json` →
   `pi.extensions` and runs only in Pi.
 - `skills/<name>/SKILL.md` is installed only by `scripts/agent-toolkit.ts`.
-- `agent-toolkit.json` is the complete source of truth for each skill's Pi,
-  Prime, Codex, and Claude scope. Every discovered skill must be configured
-  explicitly.
+- Every discovered skill defaults to Pi, Prime, Codex, and Claude.
+  `agent-toolkit.json` is optional and lists only skills whose agent scope
+  overrides that default.
 - `prompts/review.md` is retained but is not currently delivered. Do not add
   prompt delivery incidentally.
 - Do not add `pi.skills`; the cross-agent installer must remain the sole owner
@@ -30,10 +30,12 @@ explicit decision.
 | Formatting and hooks | treefmt and prek |
 
 Use `mise run setup`, `mise run fmt`, `mise run typecheck`, `mise run test`, and
-`mise run check` for repository work. Never use npm. Do not add runtime Python
-packages for the web helper; the root mypy/mdformat packages are development
-only. Pi peer packages provide types and must not be bundled. When intentionally
-refreshing Python dependencies, keep public resolution explicit with
+`mise run check` for repository work. Manage skill links with
+`mise run skills:validate|status|install|sync|uninstall`; pass installer options
+after `--`. Never use npm. Do not add runtime Python packages for the web
+helper; the root mypy/mdformat packages are development only. Pi peer packages
+provide types and must not be bundled. When intentionally refreshing Python
+dependencies, keep public resolution explicit with
 `UV_DEFAULT_INDEX=https://pypi.org/simple uv lock --python 3.14.7`, then inspect
 the lock before committing it.
 
@@ -56,7 +58,7 @@ skills/
   <name>/
     SKILL.md
     scripts/
-agent-toolkit.json
+agent-toolkit.json        # optional non-default skill scope overrides
 scripts/
   agent-toolkit.ts
 ```
@@ -65,9 +67,10 @@ Every extension has a default-exported `ExtensionAPI` factory. Every skill has
 valid Agent Skills frontmatter with a lowercase hyphenated `name` matching its
 directory and a concise actionable `description`.
 
-When adding, removing, or renaming a skill, update `agent-toolkit.json`, README
-inventory, and installer tests in the same change. Scope is explicit; never
-infer portability from a skill's contents.
+When adding, removing, or renaming a skill, update the README inventory and
+installer tests in the same change. An all-agent skill needs no config entry;
+add or update `agent-toolkit.json` only when its scope differs from the default.
+Do not infer a non-default scope from a skill's contents.
 
 ## Installer safety
 
@@ -75,7 +78,7 @@ Keep installer behavior aligned with its ownership-safe design:
 
 - destinations are exactly `~/.pi/agent/skills`, `~/.prime/agent/skills`,
   `~/.codex/skills`, and `~/.claude/skills`;
-- install and status consider only the selected agent's configured skills;
+- install and status consider each selected agent's effective skill scope;
 - sync/uninstall remove only direct skill links targeting this checkout's
   `skills/` directory;
 - preserve unmanaged files/directories, external and moved-checkout links,

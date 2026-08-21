@@ -9,7 +9,7 @@ import { run } from "./agent-toolkit";
 let sandbox: string;
 let repoRoot: string;
 let home: string;
-let configured: Record<string, string[]>;
+let overrides: Record<string, string[]>;
 
 const roots = {
 	pi: ".pi/agent/skills",
@@ -18,12 +18,12 @@ const roots = {
 	claude: ".claude/skills",
 } as const;
 
-async function writeConfig(value: unknown = { skills: configured }): Promise<void> {
+async function writeConfig(value: unknown = { skills: overrides }): Promise<void> {
 	await writeFile(join(repoRoot, "agent-toolkit.json"), `${JSON.stringify(value, null, 2)}
 `);
 }
 
-async function addSkill(name: string, agents = ["pi", "prime", "codex", "claude"]): Promise<string> {
+async function addSkill(name: string, agents?: string[]): Promise<string> {
 	const path = join(repoRoot, "skills", name);
 	await mkdir(path, { recursive: true });
 	await writeFile(join(path, "SKILL.md"), `---
@@ -33,8 +33,10 @@ description: Use ${name} while testing.
 
 # ${name}
 `);
-	configured[name] = agents;
-	await writeConfig();
+	if (agents !== undefined) {
+		overrides[name] = agents;
+		await writeConfig();
+	}
 	return path;
 }
 
@@ -61,10 +63,9 @@ beforeEach(async () => {
 	sandbox = await mkdtemp(join(tmpdir(), "agent-toolkit-installer-"));
 	repoRoot = join(sandbox, "repo");
 	home = join(sandbox, "home");
-	configured = {};
+	overrides = {};
 	await mkdir(join(repoRoot, "skills"), { recursive: true });
 	await mkdir(home, { recursive: true });
-	await writeConfig();
 });
 
 afterEach(async () => {
@@ -72,7 +73,7 @@ afterEach(async () => {
 });
 
 describe("agent-toolkit installer", () => {
-	test("installs each skill only into agents in its explicit scope", async () => {
+	test("defaults discovered skills to all agents and applies partial scope overrides", async () => {
 		const portable = await addSkill("portable");
 		const piOnly = await addSkill("pi-only", ["pi"]);
 
@@ -89,9 +90,10 @@ describe("agent-toolkit installer", () => {
 		}
 	});
 
-	test("--agent all and repeated selected agents use the four exact roots", async () => {
+	test("without config, --agent all and repeated selected agents use the four exact roots", async () => {
 		await addSkill("example");
 		const cases = [
+			{ args: [], installationHome: join(sandbox, "default-home") },
 			{ args: ["--agent", "all"], installationHome: join(sandbox, "all-home") },
 			{ args: ["--agent", "pi,prime", "--agent", "codex,claude"], installationHome: join(sandbox, "selected-home") },
 		];
@@ -106,6 +108,7 @@ describe("agent-toolkit installer", () => {
 	test("rejects all combined with a named agent across repeated flags", async () => {
 		await addSkill("example");
 		for (const args of [
+			["--agent", "all,pi"],
 			["--agent", "all", "--agent", "pi"],
 			["--agent", "pi", "--agent", "all"],
 		]) {
@@ -128,7 +131,7 @@ describe("agent-toolkit installer", () => {
 	test("sync removes a checkout-owned link after its agent scope changes", async () => {
 		const skill = await addSkill("scoped", ["pi", "prime"]);
 		expect(await run(["install", "--home", home], repoRoot)).toBe(0);
-		configured.scoped = ["pi"];
+		overrides.scoped = ["pi"];
 		await writeConfig();
 		expect(await run(["sync", "--agent", "prime", "--home", home], repoRoot)).toBe(0);
 		expect(existsSync(join(home, roots.prime, "scoped"))).toBeFalse();
@@ -206,7 +209,7 @@ describe("agent-toolkit installer", () => {
 		await addSkill("scoped", ["prime"]);
 		expect(await run(["install", "--agent", "prime", "--home", home], repoRoot)).toBe(0);
 		const destination = join(home, roots.prime, "scoped");
-		configured.scoped = ["pi"];
+		overrides.scoped = ["pi"];
 		await writeConfig();
 		const sync = await capture(() => run(["sync", "--agent", "prime", "--dry-run", "--home", home], repoRoot));
 		expect(sync.stdout).toContain("Dry run: 1 change(s) would be made.");
@@ -235,18 +238,28 @@ describe("agent-toolkit installer", () => {
 		expect(result.stdout).toContain("prime: 0 linked, 1 missing, 0 conflicts");
 	});
 
-	test("rejects frontmatter mismatch and malformed or incomplete config", async () => {
+	test("rejects invalid frontmatter and malformed config before mutation", async () => {
 		await addSkill("valid");
 		await writeFile(join(repoRoot, "skills/valid/SKILL.md"), "---\nname: wrong\ndescription: mismatch\n---\n");
-		expect((await capture(() => run(["validate"], repoRoot))).stderr).toContain("frontmatter name must match");
+		const frontmatter = await capture(() => run(["install", "--home", home], repoRoot));
+		expect(frontmatter.stderr).toContain("frontmatter name must match");
+		expect(existsSync(join(home, roots.pi))).toBeFalse();
 
 		await writeFile(join(repoRoot, "skills/valid/SKILL.md"), "---\nname: valid\ndescription: valid skill metadata\n---\n");
 		await writeFile(join(repoRoot, "agent-toolkit.json"), "{broken");
-		expect((await capture(() => run(["validate"], repoRoot))).stderr).toContain("invalid JSON");
+		const malformed = await capture(() => run(["install", "--home", home], repoRoot));
+		expect(malformed.stderr).toContain("invalid JSON");
+		expect(existsSync(join(home, roots.pi))).toBeFalse();
+	});
+
+	test("requires exactly the skills top-level config key but accepts partial inventories", async () => {
+		await addSkill("valid");
 		await writeConfig({ skills: {}, extra: true });
-		const incomplete = await capture(() => run(["validate"], repoRoot));
-		expect(incomplete.stderr).toContain('unknown top-level key "extra"');
-		expect(incomplete.stderr).toContain('discovered skill "valid" is not configured');
+		const extra = await capture(() => run(["validate"], repoRoot));
+		expect(extra.stderr).toContain('unknown top-level key "extra"');
+		expect(extra.stderr).not.toContain("is not configured");
+		await writeConfig({});
+		expect((await capture(() => run(["validate"], repoRoot))).stderr).toContain("skills must be an object");
 	});
 
 	test("rejects whitespace descriptions and duplicate YAML frontmatter keys", async () => {
@@ -358,15 +371,20 @@ description: "Use this: safely."
 		}
 	});
 
-	test("rejects missing skills, empty scopes, duplicate agents, and unknown agents", async () => {
+	test("rejects missing skills and malformed scope values before mutation", async () => {
 		await addSkill("valid");
-		await writeConfig({ skills: { valid: ["pi", "pi", "unknown"], empty: [], missing: ["pi"] } });
-		const result = await capture(() => run(["validate"], repoRoot));
+		await addSkill("scalar");
+		await writeConfig({ skills: { valid: ["pi", "pi", "unknown"], scalar: "pi", empty: [], missing: ["pi"] } });
+		const result = await capture(() => run(["install", "--home", home], repoRoot));
 		expect(result.code).toBe(1);
 		expect(result.stderr).toContain('lists agent "pi" more than once');
 		expect(result.stderr).toContain("has unknown agent");
+		expect(result.stderr).toContain("must have an agent array");
 		expect(result.stderr).toContain("must have at least one agent");
 		expect(result.stderr).toContain('configured skill "missing" is missing');
+		for (const relativeRoot of Object.values(roots)) {
+			expect(existsSync(join(home, relativeRoot))).toBeFalse();
+		}
 	});
 });
 

@@ -29,8 +29,24 @@ description = "Type-check everything (Python + TypeScript)"
 depends = ["typecheck:python", "typecheck:typescript"]
 
 [tasks."skills:validate"]
-description = "Validate Agent Skills metadata and configured scope"
+description = "Validate Agent Skills metadata and optional scope overrides"
 run = "bun scripts/agent-toolkit.ts validate"
+
+[tasks."skills:status"]
+description = "Show Agent Skill installation state"
+run = "bun scripts/agent-toolkit.ts status"
+
+[tasks."skills:install"]
+description = "Install missing Agent Skill links"
+run = "bun scripts/agent-toolkit.ts install"
+
+[tasks."skills:sync"]
+description = "Synchronize checkout-owned Agent Skill links"
+run = "bun scripts/agent-toolkit.ts sync"
+
+[tasks."skills:uninstall"]
+description = "Remove Agent Skill links owned by this checkout"
+run = "bun scripts/agent-toolkit.ts uninstall"
 
 [tasks."test:python"]
 description = "Run web helper Python unit tests"

@@ -41,7 +41,7 @@ function usage(): string {
 	return `Usage: agent-toolkit <command> [options]
 
 Commands:
-  validate                 Validate config and every skill's frontmatter
+  validate                 Validate optional config and every skill's frontmatter
   status                   Show scoped installation state for selected agents
   install                  Link missing scoped skills without removing anything
   sync                     Install scoped skills and remove stale checkout-owned links
@@ -334,13 +334,17 @@ export async function validateSkills(skillsRoot: string): Promise<string[]> {
 }
 
 export async function loadConfig(configPath: string, skills: Skill[]): Promise<{ scopes: SkillScopes; errors: string[] }> {
+	const scopes: SkillScopes = new Map(skills.map((skill) => [skill.name, [...ALL_AGENTS]]));
 	const errors: string[] = [];
+	if (!existsSync(configPath)) {
+		return { scopes, errors };
+	}
 	let parsed: unknown;
 	try {
 		parsed = parseStrictJson(await readFile(configPath, "utf8"));
 	} catch (error) {
 		const message = error instanceof Error ? error.message : String(error);
-		return { scopes: new Map(), errors: [`agent-toolkit.json: invalid JSON: ${message}`] };
+		return { scopes, errors: [`agent-toolkit.json: invalid JSON: ${message}`] };
 	}
 	if (typeof parsed !== "object" || parsed === null || Array.isArray(parsed)) {
 		return { scopes: new Map(), errors: ["agent-toolkit.json: top level must be an object"] };
@@ -358,7 +362,6 @@ export async function loadConfig(configPath: string, skills: Skill[]): Promise<{
 
 	const configured = config.skills as Record<string, unknown>;
 	const discoveredNames = new Set(skills.map((skill) => skill.name));
-	const scopes: SkillScopes = new Map();
 	for (const [skillName, rawAgents] of Object.entries(configured)) {
 		if (!discoveredNames.has(skillName)) {
 			errors.push(`agent-toolkit.json: configured skill "${skillName}" is missing from skills/`);
@@ -386,11 +389,6 @@ export async function loadConfig(configPath: string, skills: Skill[]): Promise<{
 			agents.push(rawAgent as Agent);
 		}
 		scopes.set(skillName, agents);
-	}
-	for (const skill of skills) {
-		if (!Object.prototype.hasOwnProperty.call(configured, skill.name)) {
-			errors.push(`agent-toolkit.json: discovered skill "${skill.name}" is not configured`);
-		}
 	}
 	return { scopes, errors };
 }
@@ -547,7 +545,7 @@ export async function run(argv: string[], repoRoot = resolve(dirname(fileURLToPa
 			return 1;
 		}
 		if (options.command === "validate") {
-			process.stdout.write(`Validated ${skills.length} configured skills.
+			process.stdout.write(`Validated ${skills.length} skills.
 `);
 			return 0;
 		}

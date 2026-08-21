@@ -8,7 +8,7 @@ Skills, built with [Bun](https://bun.sh).
 | Resource | Delivery | Scope |
 | -- | -- | -- |
 | `extensions/` | The `agent-toolkit` Pi package (`package.json` → `pi.extensions`) | Pi only |
-| `skills/` | Symlinks managed only by `scripts/agent-toolkit.ts` according to `agent-toolkit.json` | Per skill and harness |
+| `skills/` | Symlinks managed only by `scripts/agent-toolkit.ts`; optional `agent-toolkit.json` overrides the default scope | All four agents by default, with per-skill exceptions |
 | `prompts/` | Not delivered by the current package manifest or installer | Manual/separate decision |
 
 The package and installer deliberately do not both own Pi skill installation.
@@ -29,8 +29,9 @@ The package and installer deliberately do not both own Pi skill installation.
 | [subagent](skills/subagent/SKILL.md) | Pi | Spawns an isolated Pi process for delegated work |
 | [web](skills/web/SKILL.md) | Pi, Prime, Codex, Claude | Explicit-consent static web search and URL-to-Markdown extraction |
 
-`agent-toolkit.json` is the source of truth for this scope. Every discovered
-skill must be listed there explicitly.
+Every discovered skill defaults to all four agents. The optional
+`agent-toolkit.json` contains only exceptions; here it narrows `subagent` to Pi.
+Unlisted skills keep the all-agent default.
 
 ### Prompt
 
@@ -84,12 +85,13 @@ mise install
 direnv allow
 mise run setup
 mise run skills:validate
-bun ./scripts/agent-toolkit.ts install
+mise run skills:install -- --dry-run
+mise run skills:install
 ```
 
 The package also exposes the same CLI as the `agent-toolkit` bin. Commands
-default to all four harnesses, while each harness receives only skills scoped to
-it:
+default to all four agents. Every discovered skill is in all four effective
+scopes unless the optional config overrides that skill:
 
 - Pi: `~/.pi/agent/skills`
 - Prime: `~/.prime/agent/skills`
@@ -100,12 +102,15 @@ Select one or more harnesses with repeatable `--agent` flags or a
 comma-separated value:
 
 ```bash
-bun ./scripts/agent-toolkit.ts install --agent pi,codex
-bun ./scripts/agent-toolkit.ts status --agent prime
-bun ./scripts/agent-toolkit.ts sync --agent all --dry-run
-bun ./scripts/agent-toolkit.ts sync
-bun ./scripts/agent-toolkit.ts uninstall --agent claude
+mise run skills:install -- --agent pi,codex
+mise run skills:status -- --agent prime
+mise run skills:sync -- --agent all --dry-run
+mise run skills:sync
+mise run skills:uninstall -- --agent claude
 ```
+
+The executable remains the equivalent interface when mise is unavailable:
+`./scripts/agent-toolkit.ts <command> [options]`.
 
 - `install` adds missing scoped links and reports existing destinations as
   conflicts.
@@ -114,7 +119,8 @@ bun ./scripts/agent-toolkit.ts uninstall --agent claude
 - `status` reports linked, missing, and conflicting scoped skills without
   mutation.
 - `uninstall` removes only skill links owned by this checkout.
-- `validate` strictly checks the config inventory and every skill's frontmatter.
+- `validate` strictly checks every skill's frontmatter and, when present, the
+  optional scope-override config.
 - `--dry-run` previews changes without creating destination roots or mutating
   files.
 - `--home <path>` overrides the home directory, primarily for tests.
@@ -145,7 +151,7 @@ Use the repository's mise tasks rather than selecting runtimes directly:
 ```bash
 mise run fmt              # Format repository-authored root and skill Markdown
 mise run typecheck        # Type-check Python and TypeScript
-mise run skills:validate  # Validate skill metadata and configured scope
+mise run skills:validate  # Validate skill metadata and optional scope overrides
 mise run test             # Run the Python and Bun suites
 mise run check            # Run the complete repository gate
 mise run hooks:install    # Explicitly install pre-commit hooks
@@ -174,8 +180,8 @@ Extensions remain Pi-only package resources.
    matches the directory.
 1. Put helpers under `skills/<name>/scripts/` and use relative invocations in
    the skill documentation.
-1. Add the skill and its complete harness scope to `agent-toolkit.json`;
-   unconfigured skills are invalid.
+1. Leave an all-agent skill out of `agent-toolkit.json`. Add an override only
+   when its scope differs from the default.
 1. Add focused offline tests for helpers and installer behavior.
 1. Run `mise run check`.
 
