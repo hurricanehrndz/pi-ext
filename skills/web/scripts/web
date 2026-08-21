@@ -1,0 +1,852 @@
+#!/usr/bin/env python3
+"""Consent-gated static web search and Markdown extraction CLI."""
+
+from __future__ import annotations
+
+import argparse
+import base64
+import binascii
+import codecs
+import json
+import math
+import os
+import pathlib
+import selectors
+import signal
+import subprocess
+import sys
+import tempfile
+import time
+import urllib.error
+import urllib.parse
+import urllib.request
+from dataclasses import dataclass
+from typing import Any, Mapping, Sequence
+
+DEFAULT_SEARCH_BASE_URL = "https://search.hrndz.ca"
+DEFAULT_TIMEOUT = 20.0
+DEFAULT_MAX_LINES = 1000
+DEFAULT_MAX_BYTES = 100_000
+MAX_TIMEOUT = 300.0
+HTTP_BODY_LIMIT = 10 * 1024 * 1024
+MAX_HTTP_REDIRECTS = 10
+COMMAND_STDIN_LIMIT = 10 * 1024 * 1024
+COMMAND_STDOUT_LIMIT = 20 * 1024 * 1024
+COMMAND_STDERR_LIMIT = 256 * 1024
+IO_CHUNK_SIZE = 64 * 1024
+ERROR_LIMIT = 800
+
+
+class WebError(RuntimeError):
+    """Expected, user-facing failure."""
+
+
+@dataclass
+class HttpResponse:
+    status: int
+    url: str
+    content_type: str
+    headers: Mapping[str, str]
+    body: str
+
+
+@dataclass
+class GitHubTarget:
+    kind: str
+    owner: str
+    repo: str
+    ref: str = ""
+    path: str = ""
+    number: int = 0
+
+
+def clean_snippet(value: object, limit: int = ERROR_LIMIT) -> str:
+    text = str(value).replace("\x00", "").replace("\r\n", "\n").replace("\r", "\n").strip()
+    text = "\n".join(line[:limit] for line in text.splitlines()[:20])
+    if len(text) > limit:
+        return text[:limit] + "… [truncated]"
+    return text
+
+
+def validate_http_url(value: str) -> str:
+    try:
+        parsed = urllib.parse.urlsplit(value.strip())
+    except ValueError as error:
+        raise WebError(f"Invalid URL: {clean_snippet(error)}") from error
+    if parsed.scheme not in {"http", "https"}:
+        raise WebError("URL must use http or https")
+    if not parsed.hostname:
+        raise WebError("URL must include a host")
+    try:
+        parsed.port
+    except ValueError as error:
+        raise WebError(f"Invalid URL port: {clean_snippet(error)}") from error
+    return urllib.parse.urlunsplit(parsed)
+
+
+class ManualRedirectHandler(urllib.request.HTTPRedirectHandler):
+    """Return redirect responses untouched so callers can enforce their own bounds."""
+
+    def http_error_302(self, request, file_pointer, code, message, headers):
+        return file_pointer
+
+    http_error_301 = http_error_302
+    http_error_303 = http_error_302
+    http_error_307 = http_error_302
+    http_error_308 = http_error_302
+
+
+HTTP_OPENER = urllib.request.build_opener(ManualRedirectHandler())
+REDIRECT_STATUSES = {301, 302, 303, 307, 308}
+
+
+def _set_response_timeout(response: object, timeout: float) -> None:
+    candidates = [response]
+    fp = getattr(response, "fp", None)
+    if fp is not None:
+        candidates.append(fp)
+        raw = getattr(fp, "raw", None)
+        if raw is not None:
+            candidates.append(raw)
+            candidates.append(getattr(raw, "_sock", None))
+        candidates.append(getattr(fp, "_sock", None))
+    for candidate in candidates:
+        setter = getattr(candidate, "settimeout", None)
+        if callable(setter):
+            setter(timeout)
+            return
+
+
+def _content_length(headers: object) -> int | None:
+    getter = getattr(headers, "get", None)
+    value = getter("content-length") if callable(getter) else None
+    if value is None and callable(getter):
+        value = getter("Content-Length")
+    if not isinstance(value, str):
+        return None
+    try:
+        parsed = int(value.strip())
+    except ValueError:
+        return None
+    return parsed if parsed >= 0 else None
+
+
+def http_request(
+    url: str,
+    accept: str,
+    timeout: float,
+    *,
+    body_limit: int = HTTP_BODY_LIMIT,
+    redirect_limit: int = MAX_HTTP_REDIRECTS,
+) -> HttpResponse:
+    deadline = time.monotonic() + timeout
+    current_url = validate_http_url(url)
+    redirect_count = 0
+    request_headers = {"Accept": accept, "User-Agent": "pi-ext-web/0.1 (static extractor)"}
+
+    while True:
+        remaining = deadline - time.monotonic()
+        if remaining <= 0:
+            raise WebError(f"Request timed out after {timeout:g} seconds")
+        request = urllib.request.Request(current_url, headers=request_headers)
+        try:
+            response = HTTP_OPENER.open(request, timeout=remaining)
+        except urllib.error.HTTPError as error:
+            response = error
+        except (urllib.error.URLError, TimeoutError, OSError, ValueError, OverflowError, TypeError) as error:
+            raise WebError(f"Request failed: {clean_snippet(error)}") from error
+
+        if time.monotonic() >= deadline:
+            response.close()
+            raise WebError(f"Request timed out after {timeout:g} seconds")
+
+        try:
+            status = int(response.status)
+            if status in REDIRECT_STATUSES:
+                if redirect_count >= redirect_limit:
+                    raise WebError(f"Request exceeded the {redirect_limit}-redirect limit")
+                location = response.headers.get("location")
+                if not isinstance(location, str) or not location.strip():
+                    raise WebError(f"HTTP {status} redirect is missing a valid Location header")
+                try:
+                    target = urllib.parse.urljoin(response.geturl() or current_url, location.strip())
+                    current_url = validate_http_url(target)
+                except (WebError, ValueError, TypeError) as error:
+                    raise WebError(f"HTTP {status} redirect has an invalid Location header: {clean_snippet(error)}") from error
+                redirect_count += 1
+                continue
+
+            declared_length = _content_length(response.headers)
+            if declared_length is not None and declared_length > body_limit:
+                raise WebError(f"Response body exceeds the {body_limit}-byte limit")
+            raw = bytearray()
+            while len(raw) <= body_limit:
+                remaining = deadline - time.monotonic()
+                if remaining <= 0:
+                    raise WebError(f"Response read timed out after {timeout:g} seconds")
+                _set_response_timeout(response, remaining)
+                chunk = response.read(min(IO_CHUNK_SIZE, body_limit + 1 - len(raw)))
+                if time.monotonic() >= deadline:
+                    raise WebError(f"Response read timed out after {timeout:g} seconds")
+                if not chunk:
+                    break
+                raw.extend(chunk)
+            if len(raw) > body_limit:
+                raise WebError(f"Response body exceeds the {body_limit}-byte limit")
+            charset = response.headers.get_content_charset() or "utf-8"
+            try:
+                body = bytes(raw).decode(charset, errors="replace")
+            except LookupError as error:
+                raise WebError(f"Unsupported response charset: {clean_snippet(charset)}") from error
+            headers = {key.lower(): value for key, value in response.headers.items()}
+            return HttpResponse(
+                status=status,
+                url=response.geturl(),
+                content_type=response.headers.get("content-type", ""),
+                headers=headers,
+                body=body,
+            )
+        except WebError:
+            raise
+        except (TimeoutError, OSError, ValueError, OverflowError, TypeError) as error:
+            raise WebError(f"Response read failed: {clean_snippet(error)}") from error
+        finally:
+            response.close()
+
+
+def build_search_url(base_url: str, args: argparse.Namespace) -> str:
+    base = validate_http_url(base_url)
+    if not base.endswith("/"):
+        base += "/"
+    endpoint = urllib.parse.urljoin(base, "search")
+    params: list[tuple[str, str]] = [("q", args.query.strip()), ("format", "json"), ("pageno", str(args.page))]
+    if args.categories:
+        params.append(("categories", ",".join(args.categories)))
+    if args.engines:
+        params.append(("engines", ",".join(args.engines)))
+    if args.language:
+        params.append(("language", args.language.strip()))
+    if args.time_range:
+        params.append(("time_range", args.time_range))
+    return endpoint + "?" + urllib.parse.urlencode(params)
+
+
+def normalize_search_results(payload: object, limit: int) -> list[dict[str, object]]:
+    if not isinstance(payload, dict) or not isinstance(payload.get("results"), list):
+        raise WebError("Invalid SearXNG response: expected an object with a results array")
+    results: list[dict[str, object]] = []
+    for raw in payload["results"]:
+        if not isinstance(raw, dict):
+            continue
+        title = raw.get("title")
+        url = raw.get("url")
+        if not isinstance(title, str) or not title.strip() or not isinstance(url, str) or not url.strip():
+            continue
+        engines_raw = raw.get("engines", [])
+        if isinstance(engines_raw, str):
+            engines = [item.strip() for item in engines_raw.split(",") if item.strip()]
+        elif isinstance(engines_raw, list):
+            engines = [item.strip() for item in engines_raw if isinstance(item, str) and item.strip()]
+        else:
+            engines = []
+        result: dict[str, object] = {"title": title.strip(), "url": url.strip(), "engines": engines}
+        for source, target in (("content", "content"), ("category", "category"), ("publishedDate", "published"), ("published_date", "published")):
+            value = raw.get(source)
+            if target not in result and isinstance(value, str) and value.strip():
+                result[target] = value.strip()
+        score = raw.get("score")
+        if isinstance(score, (int, float)) and not isinstance(score, bool):
+            result["score"] = score
+        results.append(result)
+        if len(results) >= limit:
+            break
+    return results
+
+
+def search(args: argparse.Namespace) -> str:
+    query = args.query.strip()
+    if not query:
+        raise WebError("Search query must not be empty")
+    response = http_request(build_search_url(args.base_url, args), "application/json", args.timeout)
+    if not 200 <= response.status < 300:
+        raise WebError(f"SearXNG search failed with HTTP {response.status}: {clean_snippet(response.body, 500)}")
+    try:
+        payload = json.loads(response.body)
+    except json.JSONDecodeError as error:
+        raise WebError(f"SearXNG search returned invalid JSON: {clean_snippet(error)}") from error
+    results = normalize_search_results(payload, args.limit)
+    lines = [f"Search results for: {query}", ""]
+    if not results:
+        return "\n".join(lines + ["No results found."])
+    for index, result in enumerate(results, 1):
+        title = str(result["title"]).replace("]", "\\]")
+        lines.append(f"{index}. [{title}]({result['url']})")
+        metadata: list[str] = []
+        engines = result["engines"]
+        if engines:
+            metadata.append("Source: " + ", ".join(str(item) for item in engines))
+        for key, label in (("category", "Category"), ("score", "Score"), ("published", "Published")):
+            if key in result:
+                metadata.append(f"{label}: {result[key]}")
+        if metadata:
+            lines.append("   " + " | ".join(metadata))
+        if "content" in result:
+            lines.append("   " + str(result["content"]))
+        lines.append("")
+    return "\n".join(lines).rstrip()
+
+
+def parse_github_url(value: str) -> GitHubTarget | None:
+    parsed = urllib.parse.urlsplit(value)
+    host = (parsed.hostname or "").lower()
+    segments = [urllib.parse.unquote(item) for item in parsed.path.split("/") if item]
+    if host in {"github.com", "www.github.com"}:
+        if len(segments) < 2:
+            return None
+        owner, repo = segments[:2]
+        if len(segments) == 2:
+            return GitHubTarget("repo", owner, repo)
+        route = segments[2]
+        if route in {"blob", "tree"} and len(segments) >= 4:
+            path = "/".join(segments[4:])
+            if route == "blob" and not path:
+                return None
+            return GitHubTarget(route, owner, repo, segments[3], path)
+        if route in {"issues", "pull"} and len(segments) == 4 and segments[3].isdigit() and int(segments[3]) > 0:
+            return GitHubTarget("issue" if route == "issues" else "pull", owner, repo, number=int(segments[3]))
+        return None
+    if host == "raw.githubusercontent.com" and len(segments) >= 4:
+        return GitHubTarget("blob", segments[0], segments[1], segments[2], "/".join(segments[3:]))
+    return None
+
+
+def github_host(value: str) -> bool:
+    return (urllib.parse.urlsplit(value).hostname or "").lower() in {"github.com", "www.github.com", "raw.githubusercontent.com"}
+
+
+def _bounded_utf8(value: str, limit: int, description: str) -> bytes:
+    encoder = codecs.getincrementalencoder("utf-8")()
+    output = bytearray()
+    for offset in range(0, len(value), IO_CHUNK_SIZE):
+        chunk = encoder.encode(value[offset : offset + IO_CHUNK_SIZE])
+        if len(output) + len(chunk) > limit:
+            raise WebError(f"Command {description} exceeds the {limit}-byte limit")
+        output.extend(chunk)
+    final = encoder.encode("", final=True)
+    if len(output) + len(final) > limit:
+        raise WebError(f"Command {description} exceeds the {limit}-byte limit")
+    output.extend(final)
+    return bytes(output)
+
+
+def _process_group_exists(process_group: int) -> bool:
+    try:
+        os.killpg(process_group, 0)
+    except ProcessLookupError:
+        return False
+    except PermissionError:
+        return True
+    return True
+
+
+def _terminate_and_reap(process: subprocess.Popen[bytes]) -> None:
+    if os.name == "posix":
+        try:
+            os.killpg(process.pid, signal.SIGTERM)
+        except ProcessLookupError:
+            pass
+        grace_deadline = time.monotonic() + 0.2
+        while _process_group_exists(process.pid) and time.monotonic() < grace_deadline:
+            process.poll()
+            time.sleep(0.01)
+        if _process_group_exists(process.pid):
+            try:
+                os.killpg(process.pid, signal.SIGKILL)
+            except ProcessLookupError:
+                pass
+    elif process.poll() is None:
+        break_signal = getattr(signal, "CTRL_BREAK_EVENT", None)
+        if break_signal is not None:
+            try:
+                process.send_signal(break_signal)
+            except (OSError, ValueError):
+                pass
+        try:
+            process.wait(timeout=0.2)
+        except subprocess.TimeoutExpired:
+            process.kill()
+
+    if process.poll() is None:
+        try:
+            process.wait(timeout=0.2)
+        except subprocess.TimeoutExpired:
+            process.kill()
+            process.wait()
+    else:
+        process.wait()
+
+
+def _close_pipe(stream: Any) -> None:
+    if stream is None or stream.closed:
+        return
+    try:
+        stream.close()
+    except (BrokenPipeError, OSError, ValueError):
+        pass
+
+
+def _run_command_posix(
+    process: subprocess.Popen[bytes],
+    input_bytes: bytes | None,
+    deadline: float,
+    command: str,
+    timeout: float,
+    stdout_limit: int,
+    stderr_limit: int,
+) -> tuple[bytes, bytes]:
+    assert process.stdout is not None and process.stderr is not None
+    buffers = {"stdout": bytearray(), "stderr": bytearray()}
+    limits = {"stdout": stdout_limit, "stderr": stderr_limit}
+    selector = selectors.DefaultSelector()
+
+    try:
+        for name, stream in (("stdout", process.stdout), ("stderr", process.stderr)):
+            os.set_blocking(stream.fileno(), False)
+            selector.register(stream, selectors.EVENT_READ, name)
+        if input_bytes is not None:
+            assert process.stdin is not None
+            os.set_blocking(process.stdin.fileno(), False)
+            selector.register(process.stdin, selectors.EVENT_WRITE, "stdin")
+    except (OSError, ValueError) as error:
+        _terminate_and_reap(process)
+        selector.close()
+        _close_pipe(process.stdout)
+        _close_pipe(process.stderr)
+        _close_pipe(process.stdin)
+        raise WebError(f"Command {command} pipe failed: {clean_snippet(error)}") from error
+
+    input_offset = 0
+    failure: tuple[str, str | None] | None = None
+    try:
+        while True:
+            if process.poll() is not None and not selector.get_map():
+                break
+            remaining = deadline - time.monotonic()
+            if remaining <= 0:
+                failure = ("timeout", None)
+                break
+            if not selector.get_map():
+                time.sleep(min(0.01, remaining))
+                continue
+            try:
+                events = selector.select(remaining)
+            except OSError as error:
+                failure = ("pipe", clean_snippet(error))
+                break
+            for key, _ in events:
+                stream = key.fileobj
+                name = key.data
+                if name == "stdin":
+                    assert input_bytes is not None
+                    try:
+                        written = os.write(stream.fileno(), input_bytes[input_offset : input_offset + IO_CHUNK_SIZE])
+                    except BrokenPipeError:
+                        written = 0
+                        input_offset = len(input_bytes)
+                    except OSError as error:
+                        failure = ("pipe", clean_snippet(error))
+                        break
+                    else:
+                        input_offset += written
+                    if input_offset >= len(input_bytes) or written == 0:
+                        selector.unregister(stream)
+                        _close_pipe(stream)
+                    continue
+
+                available = limits[name] + 1 - len(buffers[name])
+                try:
+                    chunk = os.read(stream.fileno(), min(IO_CHUNK_SIZE, available))
+                except BlockingIOError:
+                    continue
+                except OSError as error:
+                    failure = ("pipe", clean_snippet(error))
+                    break
+                if not chunk:
+                    selector.unregister(stream)
+                    _close_pipe(stream)
+                    continue
+                buffers[name].extend(chunk)
+                if len(buffers[name]) > limits[name]:
+                    failure = ("overflow", name)
+                    break
+            if failure is not None:
+                break
+    finally:
+        if failure is not None:
+            _terminate_and_reap(process)
+        for key in list(selector.get_map().values()):
+            try:
+                selector.unregister(key.fileobj)
+            except (KeyError, ValueError):
+                pass
+            _close_pipe(key.fileobj)
+        selector.close()
+
+    if failure is None:
+        process.wait()
+    elif failure[0] == "timeout":
+        raise WebError(f"Command {command} timed out after {timeout:g} seconds")
+    elif failure[0] == "overflow":
+        name = failure[1]
+        limit = stdout_limit if name == "stdout" else stderr_limit
+        raise WebError(f"Command {command} {name} exceeds the {limit}-byte limit")
+    else:
+        raise WebError(f"Command {command} pipe failed: {failure[1]}")
+
+    return bytes(buffers["stdout"]), bytes(buffers["stderr"])
+
+
+def run_command(
+    argv: Sequence[str],
+    *,
+    input_text: str | None = None,
+    timeout: float = DEFAULT_TIMEOUT,
+    stdin_limit: int = COMMAND_STDIN_LIMIT,
+    stdout_limit: int = COMMAND_STDOUT_LIMIT,
+    stderr_limit: int = COMMAND_STDERR_LIMIT,
+) -> str:
+    # CEILING: bounded process-tree cleanup currently relies on POSIX process
+    # groups. Add a Windows Job Object implementation before enabling external
+    # commands there.
+    if os.name != "posix":
+        raise WebError("External command extraction requires a POSIX host")
+
+    input_bytes = _bounded_utf8(input_text, stdin_limit, "stdin") if input_text is not None else None
+    deadline = time.monotonic() + timeout
+    try:
+        process = subprocess.Popen(
+            list(argv),
+            stdin=subprocess.PIPE if input_bytes is not None else subprocess.DEVNULL,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            shell=False,
+            start_new_session=True,
+        )
+    except FileNotFoundError as error:
+        raise WebError(f"Required command not found: {argv[0]}") from error
+    except OSError as error:
+        raise WebError(f"Command {argv[0]} failed to start: {clean_snippet(error)}") from error
+
+    stdout_bytes, stderr_bytes = _run_command_posix(
+        process, input_bytes, deadline, argv[0], timeout, stdout_limit, stderr_limit
+    )
+
+    stdout = stdout_bytes.decode("utf-8", errors="replace")
+    stderr = stderr_bytes.decode("utf-8", errors="replace")
+    if process.returncode != 0:
+        detail = clean_snippet(stderr or stdout or "no error output")
+        raise WebError(f"Command {argv[0]} failed with exit code {process.returncode}: {detail}")
+    return stdout
+
+
+def gh_api(endpoint: str, timeout: float) -> object:
+    try:
+        output = run_command(["gh", "api", endpoint], timeout=timeout)
+    except WebError as error:
+        message = str(error)
+        lower = message.lower()
+        if any(token in lower for token in ("auth", "credentials", "not logged", "rate limit", "http 401", "http 403")):
+            raise WebError(
+                f"gh api {endpoint} was blocked by GitHub authentication or rate limiting. "
+                f"Run `gh auth login` or resolve the rate limit, then retry. {clean_snippet(message)}"
+            ) from error
+        raise WebError(
+            f"gh api {endpoint} failed. GitHub URLs use gh only; no HTML fallback is attempted. {clean_snippet(message)}"
+        ) from error
+    try:
+        return json.loads(output)
+    except json.JSONDecodeError as error:
+        raise WebError(f"gh api {endpoint} returned invalid JSON: {clean_snippet(error)}") from error
+
+
+def record(value: object, description: str) -> dict[str, Any]:
+    if not isinstance(value, dict):
+        raise WebError(f"Invalid {description}: expected a JSON object")
+    return value
+
+
+def records(value: object, description: str) -> list[dict[str, Any]]:
+    if not isinstance(value, list) or any(not isinstance(item, dict) for item in value):
+        raise WebError(f"Invalid {description}: expected a JSON array of objects")
+    return value
+
+
+def string(item: Mapping[str, Any], key: str) -> str | None:
+    value = item.get(key)
+    return value.strip() if isinstance(value, str) and value.strip() else None
+
+
+def nested_string(item: Mapping[str, Any], key: str, nested: str) -> str | None:
+    value = item.get(key)
+    return string(value, nested) if isinstance(value, dict) else None
+
+
+def decode_content(payload: Mapping[str, Any]) -> str:
+    content = string(payload, "content")
+    if content is None:
+        raise WebError("GitHub content response did not include base64 content")
+    encoding = string(payload, "encoding")
+    if encoding not in {None, "base64"}:
+        raise WebError(f"GitHub content response used unsupported encoding: {encoding}")
+    try:
+        return base64.b64decode("".join(content.split()), validate=True).decode("utf-8", errors="replace")
+    except (binascii.Error, ValueError) as error:
+        raise WebError(f"GitHub returned invalid base64 content: {clean_snippet(error)}") from error
+
+
+def api_segment(value: str) -> str:
+    return urllib.parse.quote(value, safe="")
+
+
+def contents_endpoint(target: GitHubTarget) -> str:
+    path = "/".join(api_segment(item) for item in target.path.split("/") if item)
+    suffix = "/" + path if path else ""
+    return f"repos/{api_segment(target.owner)}/{api_segment(target.repo)}/contents{suffix}?ref={urllib.parse.quote(target.ref, safe='')}"
+
+
+def body_text(item: Mapping[str, Any]) -> str:
+    return string(item, "body") or "_No body._"
+
+
+def github_markdown(target: GitHubTarget, timeout: float) -> str:
+    repo_endpoint = f"repos/{api_segment(target.owner)}/{api_segment(target.repo)}"
+    if target.kind == "repo":
+        metadata = record(gh_api(repo_endpoint, timeout), "repository metadata")
+        lines = [f"# {string(metadata, 'full_name') or target.owner + '/' + target.repo}", ""]
+        fields = (
+            ("Description", string(metadata, "description")), ("Repository", string(metadata, "html_url")),
+            ("Homepage", string(metadata, "homepage")), ("Default branch", string(metadata, "default_branch")),
+            ("License", nested_string(metadata, "license", "spdx_id") or nested_string(metadata, "license", "name")),
+            ("Stars", metadata.get("stargazers_count")), ("Forks", metadata.get("forks_count")),
+            ("Open issues", metadata.get("open_issues_count")), ("Pushed at", string(metadata, "pushed_at")),
+        )
+        for label, value in fields:
+            if value is not None and value != "":
+                lines.append(f"{label}: {value}")
+        try:
+            readme = record(gh_api(repo_endpoint + "/readme", timeout), "repository README")
+            lines.extend(["", "## README", "", decode_content(readme)])
+        except WebError as error:
+            lower = str(error).lower()
+            if "authentication" in lower or "rate limit" in lower:
+                raise
+            lines.extend(["", f"> README unavailable: {clean_snippet(error)}"])
+        return "\n".join(lines)
+    if target.kind == "blob":
+        payload = record(gh_api(contents_endpoint(target), timeout), "repository file content")
+        content = decode_content(payload)
+        lines = [f"# {target.owner}/{target.repo}/{target.path}", "", f"Ref: {target.ref}"]
+        if string(payload, "html_url"):
+            lines.append(f"Source: {string(payload, 'html_url')}")
+        lines.extend(["", "---", ""])
+        if target.path.lower().endswith((".md", ".markdown", ".mdx")):
+            lines.append(content)
+        else:
+            fence = "```"
+            while fence in content:
+                fence += "`"
+            language = {"py": "python", "rb": "ruby", "rs": "rust", "go": "go", "java": "java", "kt": "kotlin", "ts": "typescript", "tsx": "tsx", "js": "javascript", "jsx": "jsx", "json": "json", "sh": "bash", "yml": "yaml", "yaml": "yaml", "toml": "toml"}.get(target.path.rsplit(".", 1)[-1].lower(), "")
+            lines.extend([fence + language, content, fence])
+        return "\n".join(lines)
+    if target.kind == "tree":
+        payload = gh_api(contents_endpoint(target), timeout)
+        entries = records(payload, "repository directory listing") if isinstance(payload, list) else [record(payload, "repository content")]
+        title_path = target.path or "."
+        lines = [f"# {target.owner}/{target.repo}/{title_path}", "", f"Ref: {target.ref}", "", "## Directory listing", ""]
+        for entry in entries[:200]:
+            name = string(entry, "name") or string(entry, "path") or "(unknown)"
+            kind = string(entry, "type") or "unknown"
+            link = string(entry, "html_url")
+            lines.append(f"- [{name}]({link}) — {kind}" if link else f"- {name} — {kind}")
+        if len(entries) > 200:
+            lines.append(f"- … {len(entries) - 200} more entries omitted")
+        return "\n".join(lines)
+    if target.kind == "issue":
+        endpoint = f"{repo_endpoint}/issues/{target.number}"
+        issue = record(gh_api(endpoint, timeout), "GitHub issue")
+        comments = records(gh_api(endpoint + "/comments?per_page=50", timeout), "GitHub issue comments")
+        lines = [f"# Issue #{target.number}: {string(issue, 'title') or '(untitled)'}", "", f"Repository: {target.owner}/{target.repo}"]
+        raw_labels = issue.get("labels", [])
+        labels = [item.strip() for item in raw_labels if isinstance(item, str) and item.strip()] if isinstance(raw_labels, list) else []
+        if isinstance(raw_labels, list):
+            labels.extend(name for item in raw_labels if isinstance(item, dict) and (name := string(item, "name")))
+        for label, value in (("State", string(issue, "state")), ("Author", nested_string(issue, "user", "login")), ("URL", string(issue, "html_url")), ("Labels", ", ".join(labels) or None)):
+            if value:
+                lines.append(f"{label}: {value}")
+        lines.extend(["", "## Body", "", body_text(issue), "", f"## Comments ({len(comments)})"])
+        for index, comment in enumerate(comments, 1):
+            lines.extend(["", f"### Comment {index} by {nested_string(comment, 'user', 'login') or 'unknown'}", "", body_text(comment)])
+        if not comments:
+            lines.extend(["", "_No comments returned._"])
+        return "\n".join(lines)
+    endpoint = f"{repo_endpoint}/pulls/{target.number}"
+    pull = record(gh_api(endpoint, timeout), "GitHub pull request")
+    files = records(gh_api(endpoint + "/files?per_page=50", timeout), "GitHub pull request files")
+    lines = [f"# Pull Request #{target.number}: {string(pull, 'title') or '(untitled)'}", "", f"Repository: {target.owner}/{target.repo}"]
+    for label, value in (("State", string(pull, "state")), ("Author", nested_string(pull, "user", "login")), ("URL", string(pull, "html_url")), ("Source", nested_string(pull, "head", "label") or nested_string(pull, "head", "ref")), ("Base", nested_string(pull, "base", "label") or nested_string(pull, "base", "ref"))):
+        if value:
+            lines.append(f"{label}: {value}")
+    lines.extend(["", "## Body", "", body_text(pull), "", f"## Changed files ({len(files)})", ""])
+    for item in files:
+        name = string(item, "filename") or "(unknown)"
+        lines.append(f"- {name} — {string(item, 'status') or 'unknown'}, +{item.get('additions', 0)}/-{item.get('deletions', 0)} ({item.get('changes', 0)} changes)")
+    return "\n".join(lines)
+
+
+def html2markdown(html: str, domain_url: str, include: str | None, exclude: str | None, timeout: float) -> str:
+    argv = ["html2markdown", "--domain", domain_url, "--plugin-table"]
+    if include and include.strip():
+        argv.extend(["--include-selector", include.strip()])
+    if exclude and exclude.strip():
+        argv.extend(["--exclude-selector", exclude.strip()])
+    return run_command(argv, input_text=html, timeout=timeout).rstrip()
+
+
+def fetch(args: argparse.Namespace) -> str:
+    url = validate_http_url(args.url)
+    target = parse_github_url(url)
+    if target is not None:
+        markdown = github_markdown(target, args.timeout)
+        return f"URL: {url}\nExtraction method: github\n\n---\n\n{markdown}"
+    if github_host(url):
+        raise WebError(
+            "Unsupported GitHub URL form. Recognized forms are repositories, blob files, trees, issues, pull requests, and raw files; GitHub has no generic HTML fallback."
+        )
+
+    warnings: list[str] = []
+    try:
+        markdown_response = http_request(url, "text/markdown", args.timeout)
+        token_count = markdown_response.headers.get("x-markdown-tokens")
+        if token_count:
+            warnings.append(f"x-markdown-tokens: {clean_snippet(token_count, 100)}")
+        if 200 <= markdown_response.status < 300 and "text/markdown" in markdown_response.content_type.lower() and markdown_response.body.strip():
+            return format_fetch(url, markdown_response, "cloudflare-markdown", markdown_response.body, warnings)
+        if not 200 <= markdown_response.status < 300:
+            warnings.append(f"Cloudflare markdown request returned HTTP {markdown_response.status}; trying static HTML.")
+    except WebError as error:
+        warnings.append(f"Cloudflare markdown request failed; trying static HTML. {clean_snippet(error)}")
+
+    html_response = http_request(url, "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8", args.timeout)
+    if not 200 <= html_response.status < 300:
+        raise WebError(f"Static HTML fetch failed with HTTP {html_response.status}: {clean_snippet(html_response.body, 500)}")
+    markdown = html2markdown(html_response.body, html_response.url or url, args.include_selector, args.exclude_selector, args.timeout)
+    return format_fetch(url, html_response, "html2markdown", markdown, warnings)
+
+
+def format_fetch(url: str, response: HttpResponse, method: str, markdown: str, warnings: Sequence[str]) -> str:
+    lines = [f"URL: {url}"]
+    if response.url and response.url != url:
+        lines.append(f"Final URL: {response.url}")
+    lines.extend([f"Extraction method: {method}", f"Status: {response.status}"])
+    if response.content_type:
+        lines.append(f"Content-Type: {response.content_type}")
+    if warnings:
+        lines.append("Warnings:")
+        lines.extend(f"- {warning}" for warning in warnings)
+    lines.extend(["", "---", "", markdown])
+    return "\n".join(lines)
+
+
+def bounded_output(content: str, max_lines: int, max_bytes: int) -> tuple[str, str | None]:
+    encoded = content.encode("utf-8")
+    lines = content.splitlines(keepends=True)
+    truncated = len(lines) > max_lines or len(encoded) > max_bytes
+    if not truncated:
+        return content, None
+    head = "".join(lines[:max_lines])
+    head_bytes = head.encode("utf-8")[:max_bytes]
+    while True:
+        try:
+            head = head_bytes.decode("utf-8")
+            break
+        except UnicodeDecodeError:
+            head_bytes = head_bytes[:-1]
+    directory = tempfile.mkdtemp(prefix="web-output-")
+    path = pathlib.Path(directory, "full-output.md")
+    path.write_text(content, encoding="utf-8")
+    note = f"Output truncated: showing at most {max_lines} lines / {max_bytes} bytes.\nFull output saved to: {path}"
+    return head.rstrip() + "\n\n" + note, str(path)
+
+
+def positive_int(value: str) -> int:
+    parsed = int(value)
+    if parsed < 1:
+        raise argparse.ArgumentTypeError("must be at least 1")
+    return parsed
+
+
+def positive_float(value: str) -> float:
+    parsed = float(value)
+    if not math.isfinite(parsed) or parsed <= 0:
+        raise argparse.ArgumentTypeError("must be a finite number greater than 0")
+    if parsed > MAX_TIMEOUT:
+        raise argparse.ArgumentTypeError(f"must be at most {MAX_TIMEOUT:g} seconds")
+    return parsed
+
+
+def search_limit(value: str) -> int:
+    parsed = positive_int(value)
+    if parsed > 20:
+        raise argparse.ArgumentTypeError("must be at most 20")
+    return parsed
+
+
+def parser() -> argparse.ArgumentParser:
+    root = argparse.ArgumentParser(prog="web", description="Static web search and Markdown extraction")
+    subcommands = root.add_subparsers(dest="command", required=True)
+    search_parser = subcommands.add_parser("search", help="search through SearXNG")
+    search_parser.add_argument("--query", required=True)
+    search_parser.add_argument("--limit", type=search_limit, default=8)
+    search_parser.add_argument("--page", type=positive_int, default=1)
+    search_parser.add_argument("--categories", action="append", default=[])
+    search_parser.add_argument("--engines", action="append", default=[])
+    search_parser.add_argument("--language")
+    search_parser.add_argument("--time-range", choices=("day", "week", "month", "year"))
+    search_parser.add_argument("--base-url", default=os.environ.get("WEB_SEARCH_BASE_URL", DEFAULT_SEARCH_BASE_URL))
+    search_parser.add_argument("--timeout", type=positive_float, default=DEFAULT_TIMEOUT)
+    fetch_parser = subcommands.add_parser("fetch", help="fetch one HTTP(S) URL as Markdown")
+    fetch_parser.add_argument("url")
+    fetch_parser.add_argument("--include-selector")
+    fetch_parser.add_argument("--exclude-selector")
+    fetch_parser.add_argument("--timeout", type=positive_float, default=DEFAULT_TIMEOUT)
+    for child in (search_parser, fetch_parser):
+        child.add_argument("--max-lines", type=positive_int, default=DEFAULT_MAX_LINES, help=argparse.SUPPRESS)
+        child.add_argument("--max-bytes", type=positive_int, default=DEFAULT_MAX_BYTES, help=argparse.SUPPRESS)
+    return root
+
+
+def main(argv: Sequence[str] | None = None) -> int:
+    args = parser().parse_args(argv)
+    try:
+        content = search(args) if args.command == "search" else fetch(args)
+        displayed, _path = bounded_output(content, args.max_lines, args.max_bytes)
+        print(displayed)
+        return 0
+    except WebError as error:
+        print(f"error: {clean_snippet(error)}", file=sys.stderr)
+        return 1
+
+
+def cli() -> int:
+    try:
+        return main()
+    except BrokenPipeError:
+        try:
+            sys.stdout.close()
+        finally:
+            sys.stdout = open(os.devnull, "w")
+        return 0
+
+
+if __name__ == "__main__":
+    raise SystemExit(cli())

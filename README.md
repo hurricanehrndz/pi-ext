@@ -1,327 +1,147 @@
 # pi-ext
 
-A one-stop shop for [pi.dev](https://pi.dev) **extensions**, **skills**, and **prompts**, built with [Bun](https://bun.sh).
+A one-stop shop for [pi.dev](https://pi.dev) extensions and portable Agent Skills, built with [Bun](https://bun.sh).
 
-## What's in here
+## Resources and ownership
 
-| Directory | Purpose |
-|-----------|---------|
-| `extensions/` | TypeScript extensions that extend pi's behavior (tools, commands, event hooks) |
-| `skills/` | Agent skill packages following the [Agent Skills standard](https://agentskills.io/specification) |
-| `prompts/` | Prompt templates you can symlink into `~/.pi/agent/prompts` |
+| Resource | Delivery | Scope |
+|---|---|---|
+| `extensions/` | The `pi-ext` Pi package (`package.json` → `pi.extensions`) | Pi only |
+| `skills/` | Symlinks managed only by `scripts/agent-toolkit.ts` according to `agent-toolkit.json` | Per skill and harness |
+| `prompts/` | Not delivered by the current package manifest or installer | Manual/separate decision |
 
-## Repository layout
+The package and installer deliberately do not both own Pi skill installation.
 
-```
-pi-ext/
-├── extensions/          # pi extensions
-│   └── <name>/
-│       ├── index.ts     # Extension entry point (exports default function)
-│       └── ...
-├── skills/              # pi skills
-│   └── <name>/
-│       ├── SKILL.md     # Required: frontmatter + instructions
-│       └── ...
-├── prompts/             # reusable prompt templates
-│   └── <name>.md
-├── package.json         # Bun workspace / package manifest
-├── README.md
-└── AGENTS.md            # AI agent coding guidelines
-```
+### Extensions
 
-## Install
+| Name | Description |
+|---|---|
+| [custom-footer](extensions/custom-footer/index.ts) | Compact footer with path, branch, context usage, cost, model, and thinking level |
+| [protected-paths](extensions/protected-paths/index.ts) | Prevents overwrite of an existing `.env` through Pi's write/edit tools |
+| [system-prompt](extensions/system-prompt/index.ts) | Shows the current Pi system prompt and tool list |
 
-```bash
-# Install globally — all extensions and skills auto-discovered on every pi startup
-pi install git:github.com/hurricanehrndz/pi-ext
+### Skills
 
-# Try without installing (current run only)
-pi -e git:github.com/hurricanehrndz/pi-ext
-```
+| Name | Harnesses | Description |
+|---|---|---|
+| [obsidian-cli](skills/obsidian-cli/SKILL.md) | Pi, Prime, Codex, Claude | Reads, searches, and safely edits the primary Obsidian vault |
+| [subagent](skills/subagent/SKILL.md) | Pi | Spawns an isolated Pi process for delegated work |
+| [web](skills/web/SKILL.md) | Pi, Prime, Codex, Claude | Explicit-consent static web search and URL-to-Markdown extraction |
 
-## Bootstrapping my config
+`agent-toolkit.json` is the source of truth for this scope. Every discovered skill must be listed there explicitly.
 
-To reproduce my personal pi setup on a fresh machine:
+### Prompt
 
-```bash
-# 1. Clone this repo to the expected location
-git clone https://github.com/hurricanehrndz/pi-ext ~/src/me/pi-ext
-cd ~/src/me/pi-ext
-bun install
-
-# 2. Register the package with pi (auto-discovers all extensions + skills)
-pi add ~/src/me/pi-ext
-```
-
-### Catppuccin theme
-
-My config uses the [Catppuccin](https://github.com/otahontas/pi-coding-agent-catppuccin)
-theme package, set to the `catppuccin-latte` flavor. Add it with:
-
-```bash
-pi add git:github.com/otahontas/pi-coding-agent-catppuccin
-```
-
-Then select the flavor in `~/.pi/agent/settings.json`:
-
-```json
-{
-  "theme": "catppuccin-latte"
-}
-```
+`prompts/review.md` is retained as a reusable review prompt, but remains intentionally absent from package and installer delivery.
 
 ## Prerequisites
 
-- [Bun](https://bun.sh) ≥ 1.0
-- [pi](https://pi.dev) installed globally
-
-## Getting started
-
-```bash
-# Clone the repo
-git clone https://github.com/hurricanehrndz/pi-ext
-cd pi-ext
-
-# Install dependencies
-bun install
-
-# Typecheck (this is the whole build — extensions are run from source by pi)
-bunx tsc --noEmit
-```
-
-`bun install` pulls `@earendil-works/*` from npm purely for **types**. Nothing here is compiled or
-bundled: pi loads `extensions/<name>/index.ts` from source at runtime, which is why those packages
-stay in `peerDependencies`.
-
-Iterate with `pi -e ./extensions/<name>/index.ts`, then `/reload` inside pi after each edit.
-
-### Developing against a Nix-installed pi
-
-On NixOS (or with Home Manager), `pi` on `$PATH` is a wrapper script, not the real binary:
-
-```
-/etc/profiles/per-user/<you>/bin/pi   →  /nix/store/<hash>-pi/bin/pi        (wrapper)
-                                      →  /nix/store/<hash>-pi-<ver>/bin/pi  (real binary)
-```
-
-The npm package payload — `README.md`, `docs/`, `examples/` — sits in `libexec/pi` under that second
-store path. Two consequences:
-
-1. **`import.meta.resolve("@earendil-works/pi-coding-agent")` may not find the running copy.**
-   Resolution walks up from the caller's directory, so it can land on `node_modules/` or Bun's global
-   install cache — possibly a *different version* than the binary you are running. Use
-   `PI_PACKAGE_DIR` when you need the reference material belonging to the active Nix-installed pi.
-
-2. **Store paths change on every upgrade.** Never hardcode one. Derive it in your shell init:
-
-   ```bash
-   export PI_PACKAGE_DIR="$(dirname "$(dirname "$(grep -om1 '/nix/store/[^ ]*/bin/pi' \
-     "$(readlink -f "$(command -v pi)")")")")/libexec/pi"
-   ```
-
-   That greps the real binary path out of the wrapper, then walks to its `libexec/pi`. Verify with
-   `ls "$PI_PACKAGE_DIR/docs"`.
-
-The store is read-only, so treat `$PI_PACKAGE_DIR` as reference material only. When the npm types and
-the running binary disagree, the binary wins — compare `pi --version` against
-`$PI_PACKAGE_DIR/package.json` before chasing a "missing" API.
-
-## Using extensions
-
-### Load a single extension for a one-off run
-
-```bash
-pi -e ./extensions/my-extension/index.ts
-```
-
-### Install globally (auto-discovered on every pi startup)
-
-Point pi at this repo in your global settings (`~/.pi/agent/settings.json`):
-
-```json
-{
-  "extensions": [
-    "/path/to/pi-ext/extensions/my-extension"
-  ]
-}
-```
-
-Or install the whole package at once via `pi install`:
-
-```bash
-pi install /path/to/pi-ext
-```
-
-### Install project-locally
-
-Add to `.pi/settings.json` at the root of any project:
-
-```json
-{
-  "extensions": [
-    "../../pi-ext/extensions/my-extension"
-  ]
-}
-```
-
-Hot-reload after edits with `/reload` inside pi.
-
-## Using skills
-
-### Load for a one-off run
-
-```bash
-pi --skill ./skills/my-skill
-```
-
-### Install globally
-
-Add to `~/.pi/agent/settings.json`:
-
-```json
-{
-  "skills": [
-    "/path/to/pi-ext/skills"
-  ]
-}
-```
-
-Or install via `pi install` (all skills are discovered automatically from `skills/`).
-
-### Invoking a skill
-
-Once loaded, skills appear as `/skill:<name>` commands inside pi:
-
-```
-/skill:my-skill
-/skill:my-skill some argument
-```
-
-## Skills
-
-| Name | Description |
-|------|-------------|
-| [obsidian-cli](skills/obsidian-cli/SKILL.md) | Reads, searches, and safely edits the Obsidian vault at `~/zet` via the `obsidian` CLI |
-| [pi-docs](skills/pi-docs/SKILL.md) | Locates and navigates pi's own docs, source, and bundled examples when working against pi's APIs |
-| [subagent](skills/subagent/SKILL.md) | Spawns an isolated pi process for edits, verification, reviews, research, or other delegated tasks |
-| [web](skills/web/SKILL.md) | Searches through SearXNG and fetches static Markdown through `gh`, Cloudflare Markdown-for-Agents, or html2markdown |
-
-## Prompts
-
-| Name | Description |
-|------|-------------|
-| [review](prompts/review.md) | Reviews the current branch diff against the repository base branch with read-only `git diff` / `git log` / `git show` inspection |
-
-## Extensions
-
-| Name | Description |
-|------|-------------|
-| [custom-footer](extensions/custom-footer/index.ts) | Compact single-line footer: path + git branch, context usage, cumulative session cost, model and thinking level |
-| [protected-paths](extensions/protected-paths/index.ts) | Blocks `write` and `edit` from overwriting an existing `.env` (creating one is allowed) |
-| [system-prompt](extensions/system-prompt/index.ts) | Shows the current system prompt and tool list via `/system-prompt` |
-| [web](extensions/web/index.ts) | Provides consent-gated `web_search` and static `web_fetch` tools with bounded output |
-
-## Creating a new extension
-
-1. Create `extensions/<name>/index.ts`:
-
-```typescript
-import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
-import { Type } from "typebox";
-
-export default function (pi: ExtensionAPI) {
-  pi.on("session_start", async (_event, ctx) => {
-    ctx.ui.notify("my-extension loaded!", "info");
-  });
-
-  pi.registerTool({
-    name: "my_tool",
-    label: "My Tool",
-    description: "What this tool does",
-    parameters: Type.Object({
-      input: Type.String({ description: "Input text" }),
-    }),
-    async execute(_id, params, _signal, _onUpdate, _ctx) {
-      return {
-        content: [{ type: "text", text: `Result: ${params.input}` }],
-        details: {},
-      };
-    },
-  });
-}
-```
-
-2. Add a `package.json` if it needs npm dependencies:
-
-```json
-{
-  "name": "my-extension",
-  "dependencies": {
-    "some-package": "^1.0.0"
-  }
-}
-```
-
-3. Run `bun install` in that directory.
-4. Load with `pi -e ./extensions/my-extension/index.ts`.
-
-## Creating a new skill
-
-1. Create `skills/<name>/SKILL.md`:
-
-```markdown
----
-name: my-skill
-description: What this skill does and when to use it. Be specific.
----
-
-# My Skill
-
-## Setup
-
-```bash
-cd /path/to/skills/my-skill && bun install
-```
-
-## Usage
-
-```bash
-bun run scripts/main.ts <input>
-```
-```
-
-2. Add any helper scripts under `skills/<name>/scripts/`.
-3. Validate the skill loads: `pi --skill ./skills/my-skill`.
-
-## This repo as a pi package
-
-`package.json` declares `pi-package` and points pi at the right directories:
-
-```json
-{
-  "name": "pi-ext",
-  "keywords": ["pi-package"],
-  "pi": {
-    "extensions": ["./extensions"],
-    "skills": ["./skills"]
-  }
-}
-```
-
-Install directly from git:
+- [Bun](https://bun.sh) 1.3 or newer, for TypeScript tooling and the skill installer.
+- Python 3.11 or newer, for `skills/web/scripts/web` (standard library only).
+- [Pi](https://pi.dev), when using the Pi-only extensions or `subagent` skill.
+- `obsidian`, when using `obsidian-cli`.
+- `gh`, when the web skill reads recognized GitHub URLs.
+- `html2markdown`, only for the web skill's ordinary static-HTML conversion path.
+- macOS or Linux for the web helper's bounded `gh` and `html2markdown` subprocess paths.
+
+## Install the Pi extensions
+
+Install the package from Git or point Pi at a local checkout:
 
 ```bash
 pi install git:github.com/hurricanehrndz/pi-ext
+# or, from a clone:
+pi add /path/to/pi-ext
 ```
+
+Only `extensions/` is declared in the Pi package manifest. Skills are installed separately so that their cross-agent scope has one owner.
+
+For one-off extension development, use `pi -e ./extensions/<name>/index.ts` and `/reload` after edits.
+
+## Install and manage skills
+
+Clone the repository, install its existing development dependencies, then run the installer from the checkout:
+
+```bash
+git clone https://github.com/hurricanehrndz/pi-ext
+cd pi-ext
+bun install
+bun ./scripts/agent-toolkit.ts validate
+bun ./scripts/agent-toolkit.ts install
+```
+
+The package also exposes the same CLI as the `agent-toolkit` bin. Commands default to all four harnesses, while each harness receives only skills scoped to it:
+
+- Pi: `~/.pi/agent/skills`
+- Prime: `~/.prime/agent/skills`
+- Codex: `~/.codex/skills`
+- Claude: `~/.claude/skills`
+
+Select one or more harnesses with repeatable `--agent` flags or a comma-separated value:
+
+```bash
+bun ./scripts/agent-toolkit.ts install --agent pi,codex
+bun ./scripts/agent-toolkit.ts status --agent prime
+bun ./scripts/agent-toolkit.ts sync --agent all --dry-run
+bun ./scripts/agent-toolkit.ts sync
+bun ./scripts/agent-toolkit.ts uninstall --agent claude
+```
+
+- `install` adds missing scoped links and reports existing destinations as conflicts.
+- `sync` also removes stale links owned by this checkout, including links made stale by a scope change.
+- `status` reports linked, missing, and conflicting scoped skills without mutation.
+- `uninstall` removes only skill links owned by this checkout.
+- `validate` strictly checks the config inventory and every skill's frontmatter.
+- `--dry-run` previews changes without creating destination roots or mutating files.
+- `--home <path>` overrides the home directory, primarily for tests.
+
+Unmanaged files/directories, external links, links from a moved checkout, and separately managed resources are preserved. A conflict produces a nonzero exit rather than replacing content.
+
+## Web skill
+
+From `skills/web/`, after the user has explicitly requested web access or URL reading:
+
+```bash
+./scripts/web search --query "current project documentation"
+./scripts/web fetch https://example.com/docs
+./scripts/web fetch https://example.com/docs --include-selector main --exclude-selector nav
+```
+
+Search defaults to `https://search.hrndz.ca`; set `WEB_SEARCH_BASE_URL` or pass `--base-url` to change it. See [the skill instructions](skills/web/SKILL.md) for consent, GitHub handling, prerequisites, and static-extraction limitations.
+
+## Development
+
+```bash
+bun install
+bun test
+bunx tsc --noEmit
+python3 -m unittest discover -s skills/web/scripts -p '*_test.py'
+bun ./scripts/agent-toolkit.ts validate
+git diff --check
+```
+
+Pi loads extensions from TypeScript source, so type checking is the build check. The root peer dependencies provide Pi API types without bundling Pi itself. Do not install Python packages for the web helper; keep it standard-library-first and mock network/subprocess behavior in offline unit tests.
+
+### Add an extension
+
+Create `extensions/<name>/index.ts` with a default `ExtensionAPI` factory, add extension-specific dependencies only when needed, test it, and list it above. Extensions remain Pi-only package resources.
+
+### Add or change a skill
+
+1. Create `skills/<name>/SKILL.md` with Agent Skills frontmatter whose `name` matches the directory.
+2. Put helpers under `skills/<name>/scripts/` and use relative invocations in the skill documentation.
+3. Add the skill and its complete harness scope to `agent-toolkit.json`; unconfigured skills are invalid.
+4. Add focused offline tests for helpers and installer behavior.
+5. Run the development checks above.
 
 ## Tech stack
 
 | Tool | Role |
-|------|------|
-| [Bun](https://bun.sh) | Runtime, package manager, test runner |
-| [TypeScript](https://www.typescriptlang.org) | Language for all extensions |
-| [typebox](https://github.com/sinclairzx81/typebox) | JSON Schema / tool parameter types |
-| [@earendil-works/pi-coding-agent](https://pi.dev) | Extension & skill APIs |
+|---|---|
+| Bun | Installer runtime, package manager, TypeScript test runner |
+| TypeScript | Pi extensions and the installer |
+| Python standard library | Portable web helper |
+| Agent Skills | Cross-harness skill format |
 
 ## License
 

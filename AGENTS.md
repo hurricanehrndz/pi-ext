@@ -1,200 +1,105 @@
 # AGENTS.md — Coding guidelines for pi-ext
 
-This file is auto-loaded by pi as context when working in this repository.
-Follow every rule here unless the user explicitly overrides it.
+## Repository purpose and ownership
 
----
+`pi-ext` contains Pi-only TypeScript extensions and portable Agent Skills.
 
-## Repository purpose
+- `extensions/<name>/index.ts` is delivered through `package.json` → `pi.extensions` and runs only in Pi.
+- `skills/<name>/SKILL.md` is installed only by `scripts/agent-toolkit.ts`.
+- `agent-toolkit.json` is the complete source of truth for each skill's Pi, Prime, Codex, and Claude scope. Every discovered skill must be configured explicitly.
+- `prompts/review.md` is retained but is not currently delivered. Do not add prompt delivery incidentally.
+- Do not add `pi.skills`; the cross-agent installer must remain the sole owner of Pi skill links.
 
-`pi-ext` is a monorepo of **pi.dev extensions** and **skills** built with **Bun**.
+Do not rename the package/repository or change its remote identity without an explicit decision.
 
-- `extensions/` — TypeScript extension modules (one subdirectory per extension)
-- `skills/` — Agent skill packages (one subdirectory per skill, each containing `SKILL.md`)
-
----
-
-## Runtime & tooling
+## Runtime and tooling
 
 | Concern | Tool |
-|---------|------|
-| Runtime | **Bun** — use `bun`, never `node` or `npm` |
-| Package manager | **Bun** — use `bun install`, never `npm install` |
-| Test runner | **Bun** — use `bun test` |
-| Language | **TypeScript** — all extension code is `.ts` |
-| Schema / tool params | **typebox** (`import { Type } from "typebox"`) |
-| Extension API | `@earendil-works/pi-coding-agent` (peer dep, never bundle) |
+|---|---|
+| TypeScript runtime/package manager/tests | Bun (`bun`, `bun install`, `bun test`) |
+| Type checking | `bunx tsc --noEmit` |
+| Portable web helper | Python 3.11+ standard library |
+| Python tests | `python3 -m unittest` |
 
----
+Never use npm or install Python packages for the web helper. Pi peer packages provide types and must not be bundled.
 
-## Subagents
+## Project structure
 
-- “Subagent” always means a separate `pi` process spawned by the current pi orchestrator.
-- Delegate only when the task is large enough to warrant it: it would otherwise crowd out the orchestrator's context, or it splits cleanly into a bounded piece with a self-contained result. Anything finishable directly in a few steps, do directly.
-- Prefer **serial** delegation: one subagent at a time, each finished before the next starts. It keeps the work reviewable and stops children racing on the same files. Fanning out is the exception, not the default — reserve it for genuinely independent pieces where waiting is the real cost, and say why first.
-- When delegating, read and follow `skills/subagent/SKILL.md`; it holds the invocation mechanics (flags, prompt passing, read-only review, tmux for long-running children).
-- Do not duplicate the delegated work in the orchestrator. Wait for the child and report its result; surface its exit status and stderr if it fails.
-- If this workflow ever needs richer orchestration, start from pi's bundled `examples/extensions/subagent/` rather than hand-rolling machinery.
-
----
-
-## Project structure rules
-
-```
+```text
 extensions/
   <name>/
-    index.ts        ← required entry point, exports default function
-    package.json    ← only if the extension has npm deps (use bun install)
-    *.ts            ← helper modules imported from index.ts
-
+    index.ts
 skills/
   <name>/
-    SKILL.md        ← required, frontmatter + instructions
-    scripts/        ← helper scripts (prefer Bun/TS over bash)
-    references/     ← supplementary docs loaded on-demand
+    SKILL.md
+    scripts/
+agent-toolkit.json
+scripts/
+  agent-toolkit.ts
 ```
 
-Rules:
-- Every extension lives in its own subdirectory under `extensions/`.
-- Every skill lives in its own subdirectory under `skills/`.
-- The extension entry point is always `index.ts`.
-- The skill entry point is always `SKILL.md`.
-- Do **not** create files at the repo root other than `package.json`, `README.md`, `AGENTS.md`, `bunfig.toml`, and `tsconfig.json`.
+Every extension has a default-exported `ExtensionAPI` factory. Every skill has valid Agent Skills frontmatter with a lowercase hyphenated `name` matching its directory and a concise actionable `description`.
 
----
+When adding, removing, or renaming a skill, update `agent-toolkit.json`, README inventory, and installer tests in the same change. Scope is explicit; never infer portability from a skill's contents.
 
-## Writing extensions
+## Installer safety
 
-### Required shape
+Keep installer behavior aligned with its ownership-safe design:
 
-```typescript
-import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
+- destinations are exactly `~/.pi/agent/skills`, `~/.prime/agent/skills`, `~/.codex/skills`, and `~/.claude/skills`;
+- install and status consider only the selected agent's configured skills;
+- sync/uninstall remove only direct skill links targeting this checkout's `skills/` directory;
+- preserve unmanaged files/directories, external and moved-checkout links, built-ins, and separately managed resources;
+- conflicts are nonzero and never replaced;
+- dry-run must not create roots or mutate anything;
+- config/frontmatter validation happens before mutation.
 
-export default function (pi: ExtensionAPI) {
-  // subscribe to events, register tools/commands/shortcuts/flags
-}
+Add focused Bun tests for every ownership or scope change. Tests must use temporary homes, never real harness directories.
+
+## Python web helper
+
+`skills/web/scripts/web` must remain an executable Python CLI using the standard library plus external `gh` and `html2markdown` only on their applicable paths.
+
+- Use `urllib` with explicit timeouts and HTTP(S)-only validation.
+- Use `subprocess` with an argv list, stdin data, timeouts, and no shell.
+- Keep external-command execution POSIX-only until a Windows Job Object implementation can provide equivalent bounded process-tree cleanup.
+- Bound displayed output and error details; save complete output to a temporary file when truncated.
+- Keep search/fetch offline-unit-testable by mocking network and subprocess boundaries.
+- Maintain two distinct ordinary-page requests: Markdown-for-Agents first, then static HTML for `html2markdown`.
+- Recognized GitHub URLs use `gh api` and do not silently fall back to HTML.
+- Treat explicit user consent as an instruction, not a claim of technical enforcement.
+- Do not add package dependencies, interactive-page machinery, or Pi extension APIs.
+
+Python tests live beside the helper as `*_test.py` and use `unittest`.
+
+## Extension conventions
+
+- Use `node:` imports for built-ins and strict TypeScript without `any`.
+- Return `{ content, details }` from tools and name tools explicitly in prompt guidance.
+- Use narrow event handlers, `ctx.signal` for abort-aware work, and cleanup on shutdown.
+- Check `ctx.hasUI`, confirm destructive actions, and surface handler-boundary errors without crashing Pi.
+- Test TypeScript utilities with co-located `*.test.ts` files.
+
+## Skills and delegation
+
+Use relative helper paths and include prerequisites and concrete examples. Keep Pi-specific skills scoped only to Pi.
+
+When delegating work, follow `skills/subagent/SKILL.md`: prefer serial, bounded children, choose the smallest appropriate tier, and report failures instead of duplicating the child's task.
+
+## Required checks
+
+Run the checks relevant to the change, and for cross-cutting installer/web changes run all of:
+
+```bash
+bun test
+bunx tsc --noEmit
+python3 -m unittest discover -s skills/web/scripts -p '*_test.py'
+bun ./scripts/agent-toolkit.ts validate
+git diff --check
 ```
 
-Async factories are fine when startup async work (e.g. remote config fetch) is needed.
-
-### Imports
-
-- Peer deps (never bundle): `@earendil-works/pi-coding-agent`, `@earendil-works/pi-ai`,
-  `@earendil-works/pi-tui`, `@earendil-works/pi-agent-core`, `typebox`
-- Node built-ins: use `node:fs`, `node:path`, etc. (not bare `fs`, `path`)
-- npm runtime deps: add to the extension's own `package.json` under `dependencies`
-
-### Tool definitions
-
-- Use `Type.*` from `typebox` for all parameter schemas
-- Use `StringEnum` from `@earendil-works/pi-ai` for union/enum parameters
-  (Google-compatible alternative to `Type.Union`)
-- Always return `{ content: [...], details: {...} }` from `execute`
-- Provide `promptSnippet` and `promptGuidelines` when the tool needs to be
-  discoverable by the LLM; guidelines **must** name the tool explicitly
-  (write "Use <tool_name> when…" not "Use this tool when…")
-
-### Events
-
-- Prefer narrow event subscriptions — only subscribe to what the extension actually needs
-- In `tool_call` handlers, use `isToolCallEventType` to narrow `event.input` types
-- In `tool_result` handlers, use `isBashToolResult` etc. to narrow `event.details`
-- Use `ctx.signal` for all abort-aware async work inside handlers
-- Do cleanup in `session_shutdown`; restore state in `session_start`
-
-### Commands
-
-- Register with `pi.registerCommand("name", { description, handler })`
-- Provide `getArgumentCompletions` when the command accepts structured arguments
-- Session-control methods (`waitForIdle`, `newSession`, `fork`, `switchSession`,
-  `navigateTree`, `reload`) are only available in command handlers, not event handlers
-
-### UI
-
-- Prefer `ctx.ui.notify` for informational messages
-- Use `ctx.ui.confirm` before any destructive action
-- Use `ctx.ui.setStatus` for persistent footer indicators
-- Check `ctx.hasUI` before calling dialog methods in non-interactive contexts
-
-### Error handling
-
-- Never swallow errors silently; surface them via `ctx.ui.notify("…", "error")`
-- Extensions must not crash pi — catch unexpected errors at handler boundaries
-
----
-
-## Writing skills
-
-### Required frontmatter
-
-```yaml
----
-name: <name>           # must match parent directory name, lowercase a-z 0-9 hyphens
-description: <text>    # ≤1024 chars, specific and actionable — explains WHEN to use it
----
-```
-
-### Rules
-
-- `name` must match the parent directory name exactly
-- Description must say *what* the skill does **and** when to use it (bad: "Helps with X", good: "Does Y and Z when working with X files")
-- Use relative paths from the skill directory (`./scripts/foo.ts`, `./references/API.md`)
-- Prefer Bun/TypeScript scripts over bash where feasible
-- Include a **Setup** section if any install step is required before first use
-- Include a **Usage** section with concrete invocation examples
-
----
-
-## Dependency management
-
-- Run `bun install` at repo root for shared tooling
-- Run `bun install` inside `extensions/<name>/` for extension-specific deps
-- Never commit `node_modules/`; add it to `.gitignore`
-- `@earendil-works/pi-coding-agent` and other pi core packages must be in
-  `peerDependencies` with `"*"`, never in `dependencies` — they must not be bundled
-
----
-
-## Code style
-
-- TypeScript strict mode (`"strict": true` in `tsconfig.json`)
-- No `any` — use proper types or `unknown`
-- No `console.log` in production extension code; use `ctx.ui.notify` or pi's logger
-- Prefer `async/await` over raw Promises
-- Keep files small and focused; extract helpers to sibling `.ts` modules
-- Use named exports for shared types; use default export only for the extension factory
-
----
-
-## Testing
-
-- Use `bun test` with `*.test.ts` files co-located with the code under test
-- Unit-test pure utility functions; do not attempt to unit-test event handlers directly
-- For manual integration testing: `pi -e ./extensions/<name>/index.ts`
-
----
+Do not use live Pi sessions or real harness homes for automated checks.
 
 ## Git hygiene
 
-- One extension or skill per PR/commit when possible
-- Commit message format: `<type>(<scope>): <short description>`
-  - types: `feat`, `fix`, `docs`, `refactor`, `test`, `chore`
-  - scope: extension or skill name (e.g. `feat(brave-search): add pagination`)
-- Never commit secrets, API keys, or tokens
-
----
-
-## Adding new extensions or skills (checklist)
-
-**Extension:**
-- [ ] Created `extensions/<name>/index.ts` with default export
-- [ ] Added `package.json` if npm deps are needed, ran `bun install`
-- [ ] Tested with `pi -e ./extensions/<name>/index.ts`
-- [ ] Updated root `README.md` listing
-
-**Skill:**
-- [ ] Created `skills/<name>/SKILL.md` with valid frontmatter
-- [ ] `name` in frontmatter matches directory name
-- [ ] Description is specific and ≥ 30 characters
-- [ ] Tested with `pi --skill ./skills/<name>`
-- [ ] Updated root `README.md` listing
+Keep changes focused, do not commit secrets, and do not commit unless asked. Report changed files, tests run, skipped checks, warnings, and remaining uncertainty.

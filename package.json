@@ -10,17 +10,18 @@
     "skills/*"
   ],
   "pi": {
-    "extensions": ["./extensions"],
-    "skills": ["./skills"]
+    "extensions": ["./extensions"]
   },
   "peerDependencies": {
     "@earendil-works/pi-coding-agent": "*",
     "@earendil-works/pi-ai": "*",
-    "@earendil-works/pi-tui": "*",
-    "typebox": "*"
+    "@earendil-works/pi-tui": "*"
   },
   "devDependencies": {
     "typescript": "^5.0.0",
     "@types/bun": "latest"
+  },
+  "bin": {
+    "agent-toolkit": "./scripts/agent-toolkit.ts"
   }
 }

@@ -1,56 +1,51 @@
 ---
 name: web
-description: Use when the user explicitly asks for web search, current external information, or reading a URL. Searches through SearXNG and fetches static Markdown through GitHub CLI, Cloudflare Markdown-for-Agents, or HTML converted by html2markdown.
+description: Search the public web or read an HTTP(S) URL as static Markdown when the user explicitly requests web search, current external information, or URL inspection.
 ---
 
 # Web
 
-Use this skill only when the user's request explicitly requires web access.
+Use this skill only when the user explicitly asks for web/current information or asks to read, inspect, summarize, or extract a URL. Do not invoke it speculatively when local files or supplied context are enough. The CLI does not enforce consent; you must.
 
-## When to Use
+Run commands from this skill directory so `./scripts/web` resolves consistently in Pi, Prime, Codex, and Claude.
 
-- The user explicitly asks to search the web or find current external information.
-- The user provides a URL and asks to read, summarize, inspect, or extract it.
+## Prerequisites
 
-Do not use web tools when local files, provided context, or repository search are sufficient. Do not browse speculatively or turn a focused request into broad crawling.
+- Python 3.11 or newer (the helper otherwise uses only the standard library).
+- [`gh`](https://cli.github.com/) for recognized GitHub URLs. Authenticate with `gh auth login` when needed.
+- `html2markdown` only when an ordinary page does not support Cloudflare Markdown-for-Agents and static HTML must be converted.
+- A POSIX host (macOS or Linux) for the `gh` and `html2markdown` paths. Search and direct Markdown-for-Agents responses do not spawn external commands.
 
-## Tools
+No client-side code or dynamic rendering is used.
 
-- `web_search` searches the public web through SearXNG.
-- `web_fetch` reads a user-requested URL as Markdown. Recognized GitHub repository, pull request, issue, blob, tree, and raw-file URLs route through `gh`; other URLs try Cloudflare Markdown-for-Agents and then static HTML converted with `html2markdown`.
+## Search
 
-When calling either tool, set `userRequestReason` to the explicit user request that authorized web access. Do not invent a rationale.
+Search the configured SearXNG instance (default: `https://search.hrndz.ca`):
 
-`web_fetch` accepts optional `includeSelector` and `excludeSelector` CSS selectors for narrowing ordinary HTML conversion. These selectors do not change the GitHub or Cloudflare paths.
-
-## GitHub Links
-
-Use `web_fetch` for recognized GitHub links instead of fetching their generic HTML pages. If GitHub authentication or rate limiting blocks `gh`, ask the user to run `gh auth login` or otherwise resolve the limit before retrying.
-
-## Usage
-
-Web search request:
-
-```text
-Use web search to find the current html2markdown CLI docs for include-selector and summarize the top results.
+```bash
+./scripts/web search --query "current Python release notes"
 ```
 
-URL extraction request:
+Set `WEB_SEARCH_BASE_URL` or pass `--base-url` to use another SearXNG endpoint. Useful options include `--limit`, `--page`, repeatable `--categories` and `--engines`, `--language`, and `--time-range day|week|month|year`.
 
-```text
-Read https://example.com/docs and summarize the relevant setup instructions.
+## Fetch
+
+Fetch one HTTP(S) URL as Markdown:
+
+```bash
+./scripts/web fetch https://example.com/docs
+./scripts/web fetch https://example.com/docs   --include-selector 'main' --exclude-selector '.navigation'
+./scripts/web fetch https://github.com/cli/cli/pull/123
 ```
 
-GitHub request:
+Recognized GitHub repository, blob, tree, issue, pull-request, and raw-file URLs use `gh api` and do not fall back to GitHub HTML. Other URLs first request Cloudflare Markdown-for-Agents. If unavailable, the helper makes a separate static HTML request and pipes that response to `html2markdown`; selectors apply only to this fallback.
 
-```text
-Read https://github.com/cli/cli/pull/123 and summarize the pull request.
-```
+Acquisition has fixed safety ceilings: 10 MiB per HTTP body and command stdin, 20 MiB for command stdout, and 256 KiB for command stderr. The per-request/per-command timeout defaults to 20 seconds and may not exceed 300 seconds. Displayed output and error details have smaller bounds. When displayed output is truncated, the complete acquired Markdown is saved to a temporary path printed by the command.
 
 ## Limitations
 
-URL extraction is static. If a page exposes no useful content without client-side execution or requires an interactive login, explain the limitation rather than attempting another access method.
+Extraction is static. Pages that require JavaScript, interactive login, anti-bot challenges, or session state may return incomplete content or fail. Explain that limitation rather than attempting dynamic extraction.
 
 ## Maintenance
 
-This skill lives in the `pi-ext` repo at `skills/web/`. If you find a bug while using it, fix it in that repository before relying on the skill further.
+This skill lives at `skills/web/` in the `pi-ext` repository.

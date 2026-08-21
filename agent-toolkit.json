@@ -1,0 +1,7 @@
+{
+  "skills": {
+    "obsidian-cli": ["pi", "prime", "codex", "claude"],
+    "subagent": ["pi"],
+    "web": ["pi", "prime", "codex", "claude"]
+  }
+}
