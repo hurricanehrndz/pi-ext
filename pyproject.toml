@@ -1,5 +1,5 @@
 [project]
-name = "pi-ext-dev-env"
+name = "agent-toolkit-dev-env"
 version = "0+not-versioned"
 requires-python = "==3.14.7"
 

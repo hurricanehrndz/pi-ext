@@ -72,4 +72,4 @@ limitation rather than attempting dynamic extraction.
 
 ## Maintenance
 
-This skill lives at `skills/web/` in the `pi-ext` repository.
+This skill lives at `skills/web/` in the `agent-toolkit` repository.

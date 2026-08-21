@@ -145,7 +145,7 @@ def http_request(
     deadline = time.monotonic() + timeout
     current_url = validate_http_url(url)
     redirect_count = 0
-    request_headers = {"Accept": accept, "User-Agent": "pi-ext-web/0.1 (static extractor)"}
+    request_headers = {"Accept": accept, "User-Agent": "agent-toolkit-web/0.1 (static extractor)"}
 
     while True:
         remaining = deadline - time.monotonic()

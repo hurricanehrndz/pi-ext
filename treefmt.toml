@@ -1,10 +1,6 @@
 [formatter.mdformat]
 command = "uv"
-includes = [
-  "README.md",
-  "AGENTS.md",
-  "skills/*/SKILL.md",
-]
+includes = ["*.md", "**/*.md"]
 options = [
   "run",
   "mdformat",

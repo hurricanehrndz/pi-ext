@@ -1,8 +1,9 @@
-# AGENTS.md — Coding guidelines for pi-ext
+# AGENTS.md — Coding guidelines for agent-toolkit
 
 ## Repository purpose and ownership
 
-`pi-ext` contains Pi-only TypeScript extensions and portable Agent Skills.
+`agent-toolkit` contains Pi-only TypeScript extensions and portable Agent
+Skills.
 
 - `extensions/<name>/index.ts` is delivered through `package.json` →
   `pi.extensions` and runs only in Pi.

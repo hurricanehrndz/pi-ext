@@ -1,5 +1,5 @@
 {
-  "name": "pi-ext",
+  "name": "agent-toolkit",
   "version": "0.1.0",
   "description": "One-stop shop for pi.dev extensions and skills",
   "keywords": ["pi-package"],

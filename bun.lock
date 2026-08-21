@@ -3,7 +3,7 @@
   "configVersion": 1,
   "workspaces": {
     "": {
-      "name": "pi-ext",
+      "name": "agent-toolkit",
       "devDependencies": {
         "@types/bun": "1.3.13",
         "markdownlint-cli": "0.41.0",

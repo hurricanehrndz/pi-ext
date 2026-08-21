@@ -18,7 +18,7 @@ from unittest import mock
 
 SCRIPT = pathlib.Path(__file__).with_name("web")
 REPO_ROOT = SCRIPT.parents[3]
-LOADER = importlib.machinery.SourceFileLoader("pi_ext_web", str(SCRIPT))
+LOADER = importlib.machinery.SourceFileLoader("agent_toolkit_web", str(SCRIPT))
 SPEC = importlib.util.spec_from_loader(LOADER.name, LOADER)
 assert SPEC is not None
 web = importlib.util.module_from_spec(SPEC)
@@ -417,7 +417,7 @@ class ProcessAndOutputTests(unittest.TestCase):
 
     def test_missing_binary_is_a_clean_error(self):
         with self.assertRaisesRegex(web.WebError, "Required command not found"):
-            web.run_command(["/definitely/not/a/real/pi-ext-command"])
+            web.run_command(["/definitely/not/a/real/agent-toolkit-command"])
 
     def test_subprocess_uses_argv_and_stdin_without_a_shell(self):
         source = "import sys; sys.stdout.buffer.write(sys.stdin.buffer.read())"

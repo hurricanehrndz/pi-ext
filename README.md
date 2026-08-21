@@ -1,4 +1,4 @@
-# pi-ext
+# agent-toolkit
 
 A one-stop shop for [pi.dev](https://pi.dev) extensions and portable Agent
 Skills, built with [Bun](https://bun.sh).
@@ -7,7 +7,7 @@ Skills, built with [Bun](https://bun.sh).
 
 | Resource | Delivery | Scope |
 | -- | -- | -- |
-| `extensions/` | The `pi-ext` Pi package (`package.json` → `pi.extensions`) | Pi only |
+| `extensions/` | The `agent-toolkit` Pi package (`package.json` → `pi.extensions`) | Pi only |
 | `skills/` | Symlinks managed only by `scripts/agent-toolkit.ts` according to `agent-toolkit.json` | Per skill and harness |
 | `prompts/` | Not delivered by the current package manifest or installer | Manual/separate decision |
 
@@ -60,9 +60,9 @@ intentionally absent from package and installer delivery.
 Install the package from Git or point Pi at a local checkout:
 
 ```bash
-pi install git:github.com/hurricanehrndz/pi-ext
+pi install git:github.com/hurricanehrndz/agent-toolkit
 # or, from a clone:
-pi add /path/to/pi-ext
+pi add /path/to/agent-toolkit
 ```
 
 Only `extensions/` is declared in the Pi package manifest. Skills are installed
@@ -77,8 +77,8 @@ Clone the repository, approve its local tool configuration, and install the
 locked dependencies:
 
 ```bash
-git clone https://github.com/hurricanehrndz/pi-ext
-cd pi-ext
+git clone https://github.com/hurricanehrndz/agent-toolkit
+cd agent-toolkit
 mise trust
 mise install
 direnv allow

@@ -192,6 +192,6 @@ after being warned.
 
 ## Maintenance
 
-This skill lives in the `pi-ext` repo at `skills/obsidian-cli/`. If you find a
-bug while using it, fix it and commit the change to the repo first, before
-relying on the skill further.
+This skill lives in the `agent-toolkit` repo at `skills/obsidian-cli/`. If you
+find a bug while using it, fix it and commit the change to the repo first,
+before relying on the skill further.

@@ -58,7 +58,7 @@ async function capture(callback: () => Promise<number>): Promise<{ code: number;
 }
 
 beforeEach(async () => {
-	sandbox = await mkdtemp(join(tmpdir(), "pi-ext-installer-"));
+	sandbox = await mkdtemp(join(tmpdir(), "agent-toolkit-installer-"));
 	repoRoot = join(sandbox, "repo");
 	home = join(sandbox, "home");
 	configured = {};

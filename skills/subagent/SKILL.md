@@ -179,6 +179,6 @@ documentation rather than expanding this skill into an ad hoc process manager.
 
 ## Maintenance
 
-This skill lives in the `pi-ext` repo at `skills/subagent/`. If you find a bug
-while using it, fix it and commit the change to the repo first, before relying
-on the skill further.
+This skill lives in the `agent-toolkit` repo at `skills/subagent/`. If you find
+a bug while using it, fix it and commit the change to the repo first, before
+relying on the skill further.
