@@ -2,6 +2,7 @@ import { afterEach, beforeEach, describe, expect, spyOn, test } from "bun:test";
 import { existsSync, lstatSync, readlinkSync } from "node:fs";
 import { mkdir, mkdtemp, rm, symlink, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
+import { createServer } from "node:net";
 import { dirname, join, relative, resolve } from "node:path";
 
 import { run } from "./agent-toolkit";
@@ -16,6 +17,13 @@ const roots = {
 	prime: ".prime/agent/skills",
 	codex: ".codex/skills",
 	claude: ".claude/skills",
+} as const;
+
+const contextDestinations = {
+	pi: ".pi/agent/APPEND_SYSTEM.md",
+	prime: ".prime/agent/APPEND_SYSTEM.md",
+	codex: ".codex/AGENTS.md",
+	claude: ".claude/CLAUDE.md",
 } as const;
 
 async function writeConfig(value: unknown = { skills: overrides }): Promise<void> {
@@ -37,6 +45,13 @@ description: Use ${name} while testing.
 		overrides[name] = agents;
 		await writeConfig();
 	}
+	return path;
+}
+
+async function addContextSource(): Promise<string> {
+	const path = join(repoRoot, "context/working-style.md");
+	await mkdir(dirname(path), { recursive: true });
+	await writeFile(path, "# Working style\n");
 	return path;
 }
 
@@ -236,6 +251,161 @@ describe("agent-toolkit installer", () => {
 		const result = await capture(() => run(["status", "--agent", "prime", "--home", home], repoRoot));
 		expect(result.code).toBe(0);
 		expect(result.stdout).toContain("prime: 0 linked, 1 missing, 0 conflicts");
+	});
+
+	test("links optional context to exact destinations and respects selected agents", async () => {
+		const contextSource = await addContextSource();
+		const allHome = join(sandbox, "all-context-home");
+		expect(await run(["install", "--home", allHome], repoRoot)).toBe(0);
+		for (const relativeDestination of Object.values(contextDestinations)) {
+			const destination = join(allHome, relativeDestination);
+			expect(lstatSync(destination).isSymbolicLink()).toBeTrue();
+			expect(resolve(dirname(destination), readlinkSync(destination))).toBe(contextSource);
+		}
+
+		const selectedHome = join(sandbox, "selected-context-home");
+		expect(await run(["install", "--agent", "pi,codex", "--home", selectedHome], repoRoot)).toBe(0);
+		for (const agent of ["pi", "codex"] as const) {
+			expect(lstatSync(join(selectedHome, contextDestinations[agent])).isSymbolicLink()).toBeTrue();
+		}
+		for (const agent of ["prime", "claude"] as const) {
+			expect(existsSync(join(selectedHome, contextDestinations[agent]))).toBeFalse();
+		}
+	});
+
+	test("accepts an absent context source without creating context roots", async () => {
+		const result = await capture(() => run(["install", "--home", home], repoRoot));
+		expect(result.code).toBe(0);
+		for (const relativeDestination of Object.values(contextDestinations)) {
+			expect(existsSync(dirname(join(home, relativeDestination)))).toBeFalse();
+		}
+	});
+
+	test("status reports linked, missing, and conflicting context separately", async () => {
+		const contextSource = await addContextSource();
+		const piDestination = join(home, contextDestinations.pi);
+		const conflictDestination = join(home, contextDestinations.codex);
+		await mkdir(dirname(piDestination), { recursive: true });
+		await symlink(relative(dirname(piDestination), contextSource), piDestination);
+		await mkdir(dirname(conflictDestination), { recursive: true });
+		await writeFile(conflictDestination, "keep");
+
+		const result = await capture(() =>
+			run(["status", "--agent", "pi,prime,codex", "--home", home], repoRoot),
+		);
+		expect(result.code).toBe(1);
+		expect(result.stdout).toContain(`  context: linked (${piDestination})\n`);
+		expect(result.stdout).toContain(`  context: missing (${join(home, contextDestinations.prime)})\n`);
+		expect(result.stdout).toContain(`  context: conflict (${conflictDestination})\n`);
+		expect(await Bun.file(conflictDestination).text()).toBe("keep");
+	});
+
+	test("preserves every context destination not owned by the current source", async () => {
+		await addContextSource();
+		const destinations = {
+			pi: join(home, contextDestinations.pi),
+			prime: join(home, contextDestinations.prime),
+			codex: join(home, contextDestinations.codex),
+			claude: join(home, contextDestinations.claude),
+		};
+		await mkdir(dirname(destinations.pi), { recursive: true });
+		await writeFile(destinations.pi, "keep file");
+		await mkdir(destinations.prime, { recursive: true });
+		const external = join(sandbox, "external-context.md");
+		await writeFile(external, "external");
+		await mkdir(dirname(destinations.codex), { recursive: true });
+		await symlink(external, destinations.codex);
+		const moved = join(sandbox, "moved-checkout/context/working-style.md");
+		await mkdir(dirname(moved), { recursive: true });
+		await writeFile(moved, "moved");
+		await mkdir(dirname(destinations.claude), { recursive: true });
+		await symlink(moved, destinations.claude);
+
+		for (const command of ["install", "sync"] as const) {
+			expect((await capture(() => run([command, "--home", home], repoRoot))).code).toBe(1);
+		}
+		expect(await run(["uninstall", "--home", home], repoRoot)).toBe(0);
+		expect(await Bun.file(destinations.pi).text()).toBe("keep file");
+		expect(lstatSync(destinations.prime).isDirectory()).toBeTrue();
+		expect(readlinkSync(destinations.codex)).toBe(external);
+		expect(readlinkSync(destinations.claude)).toBe(moved);
+	});
+
+	test("recognizes relative owned context links and removes them after source deletion", async () => {
+		const contextSource = await addContextSource();
+		for (const agent of ["pi", "prime"] as const) {
+			const destination = join(home, contextDestinations[agent]);
+			await mkdir(dirname(destination), { recursive: true });
+			await symlink(relative(dirname(destination), contextSource), destination);
+		}
+		await rm(contextSource);
+
+		const syncPreview = await capture(() =>
+			run(["sync", "--agent", "pi", "--dry-run", "--home", home], repoRoot),
+		);
+		expect(syncPreview.stdout).toContain("Dry run: 1 change(s) would be made.");
+		expect(lstatSync(join(home, contextDestinations.pi)).isSymbolicLink()).toBeTrue();
+		expect(await run(["sync", "--agent", "pi", "--home", home], repoRoot)).toBe(0);
+		expect(() => lstatSync(join(home, contextDestinations.pi))).toThrow();
+
+		const uninstallPreview = await capture(() =>
+			run(["uninstall", "--agent", "prime", "--dry-run", "--home", home], repoRoot),
+		);
+		expect(uninstallPreview.stdout).toContain("Dry run: 1 change(s) would be made.");
+		expect(lstatSync(join(home, contextDestinations.prime)).isSymbolicLink()).toBeTrue();
+		expect(await run(["uninstall", "--agent", "prime", "--home", home], repoRoot)).toBe(0);
+		expect(() => lstatSync(join(home, contextDestinations.prime))).toThrow();
+	});
+
+	test("context dry-run counts additions without creating parent roots", async () => {
+		await addContextSource();
+		const destination = join(home, contextDestinations.claude);
+		const result = await capture(() =>
+			run(["sync", "--agent", "claude", "--dry-run", "--home", home], repoRoot),
+		);
+		expect(result.stdout).toContain("Dry run: 1 change(s) would be made.");
+		expect(existsSync(dirname(destination))).toBeFalse();
+	});
+
+	test("a context-free checkout preserves links owned by another checkout", async () => {
+		const personalSource = join(sandbox, "personal/context/working-style.md");
+		const destination = join(home, contextDestinations.pi);
+		await mkdir(dirname(personalSource), { recursive: true });
+		await writeFile(personalSource, "personal");
+		await mkdir(dirname(destination), { recursive: true });
+		await symlink(personalSource, destination);
+
+		expect(await run(["sync", "--agent", "pi", "--home", home], repoRoot)).toBe(0);
+		expect(await run(["uninstall", "--agent", "pi", "--home", home], repoRoot)).toBe(0);
+		expect(readlinkSync(destination)).toBe(personalSource);
+	});
+
+	test("rejects invalid context sources before any mutation", async () => {
+		await addSkill("valid");
+		const contextSource = join(repoRoot, "context/working-style.md");
+		const invalidTargets = ["directory", "socket", "symlink", "broken-symlink"] as const;
+		for (const invalid of invalidTargets) {
+			await rm(join(repoRoot, "context"), { recursive: true, force: true });
+			await mkdir(dirname(contextSource), { recursive: true });
+			const server = invalid === "socket" ? createServer() : undefined;
+			if (invalid === "directory") {
+				await mkdir(contextSource);
+			} else if (server !== undefined) {
+				await new Promise<void>((resolveListen) => server.listen(contextSource, resolveListen));
+			} else {
+				const target = join(sandbox, invalid === "symlink" ? "external.md" : "missing.md");
+				if (invalid === "symlink") await writeFile(target, "external");
+				await symlink(target, contextSource);
+			}
+			const result = await capture(() => run(["install", "--agent", "pi", "--home", home], repoRoot));
+			expect(result.code).toBe(1);
+			expect(result.stderr).toContain("context/working-style.md: must be a regular file");
+			expect(existsSync(join(home, roots.pi))).toBeFalse();
+			expect(existsSync(join(home, contextDestinations.pi))).toBeFalse();
+			if (server !== undefined) {
+				await new Promise<void>((resolveClose) => server.close(() => resolveClose()));
+			}
+		}
 	});
 
 	test("rejects invalid frontmatter and malformed config before mutation", async () => {

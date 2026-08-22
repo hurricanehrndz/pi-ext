@@ -1,14 +1,15 @@
 # agent-toolkit
 
-A one-stop shop for [pi.dev](https://pi.dev) extensions and portable Agent
-Skills, built with [Bun](https://bun.sh).
+A one-stop shop for [pi.dev](https://pi.dev) extensions, portable Agent Skills,
+and personal global agent context, built with [Bun](https://bun.sh).
 
 ## Resources and ownership
 
 | Resource | Delivery | Scope |
 | -- | -- | -- |
 | `extensions/` | The `agent-toolkit` Pi package (`package.json` → `pi.extensions`) | Pi only |
-| `skills/` | Symlinks managed only by `scripts/agent-toolkit.ts`; optional `agent-toolkit.json` overrides the default scope | All four agents by default, with per-skill exceptions |
+| `skills/` | Per-skill symlinks managed only by `scripts/agent-toolkit.ts`; optional `agent-toolkit.json` overrides the default scope | All four agents by default, with per-skill exceptions |
+| `context/working-style.md` | One fixed global-context symlink per agent, managed by the same CLI | All four agents when the source file exists |
 | `prompts/` | Not delivered by the current package manifest or installer | Manual/separate decision |
 
 The package and installer deliberately do not both own Pi skill installation.
@@ -75,7 +76,7 @@ separately so that their cross-agent scope has one owner.
 For one-off extension development, use `pi -e ./extensions/<name>/index.ts` and
 `/reload` after edits.
 
-## Install and manage skills
+## Install and manage toolkit resources
 
 Clone the repository, approve its local tool configuration, and install the
 locked dependencies:
@@ -87,50 +88,67 @@ mise trust
 mise install
 direnv allow
 mise run setup
-mise run skills:validate
-mise run skills:install -- --dry-run
-mise run skills:install
+mise run toolkit:validate
+mise run toolkit:sync -- --dry-run
+mise run toolkit:sync
 ```
 
-The package also exposes the same CLI as the `agent-toolkit` bin. Commands
-default to all four agents. Every discovered skill is in all four effective
-scopes unless the optional config overrides that skill:
+`toolkit:sync` is the normal reconciler for both resource types. It installs
+expected links and removes stale links owned by this checkout. The CLI uses
+these eight fixed destinations:
 
-- Pi: `~/.pi/agent/skills`
-- Prime: `~/.prime/agent/skills`
-- Codex: `~/.codex/skills`
-- Claude: `~/.claude/skills`
+| Agent | Skills | Global context |
+| -- | -- | -- |
+| Pi | `~/.pi/agent/skills` | `~/.pi/agent/APPEND_SYSTEM.md` |
+| Prime | `~/.prime/agent/skills` | `~/.prime/agent/APPEND_SYSTEM.md` |
+| Codex | `~/.codex/skills` | `~/.codex/AGENTS.md` |
+| Claude | `~/.claude/skills` | `~/.claude/CLAUDE.md` |
 
-Select one or more harnesses with repeatable `--agent` flags or a
-comma-separated value:
+Every discovered skill defaults to all four agents unless `agent-toolkit.json`
+narrows its scope. The presence of `context/working-style.md` makes global
+context expected for every selected agent. A checkout without that file does not
+own global context and will not remove a link installed by another checkout.
+
+Select agents with repeatable `--agent` flags or a comma-separated value:
 
 ```bash
-mise run skills:install -- --agent pi,codex
-mise run skills:status -- --agent prime
-mise run skills:sync -- --agent all --dry-run
-mise run skills:sync
-mise run skills:uninstall -- --agent claude
+mise run toolkit:status -- --agent prime
+mise run toolkit:sync -- --agent pi,codex --dry-run
+mise run toolkit:sync -- --agent all
+mise run toolkit:uninstall -- --agent claude --dry-run
 ```
 
-The executable remains the equivalent interface when mise is unavailable:
-`./scripts/agent-toolkit.ts <command> [options]`.
+The executable and package bin provide the full CLI when mise is unavailable:
+`./scripts/agent-toolkit.ts <command> [options]` or
+`agent-toolkit <command> [options]`.
 
-- `install` adds missing scoped links and reports existing destinations as
-  conflicts.
-- `sync` also removes stale links owned by this checkout, including links made
-  stale by a scope change.
-- `status` reports linked, missing, and conflicting scoped skills without
-  mutation.
-- `uninstall` removes only skill links owned by this checkout.
-- `validate` strictly checks every skill's frontmatter and, when present, the
-  optional scope-override config.
+- `sync` reconciles skills and optional context. It removes only links owned by
+  this checkout.
+
+- `status` reports linked, missing, and conflicting resources without mutation.
+
+- `uninstall` removes only links owned by this checkout.
+
+- `validate` checks every skill, the optional scope config, and the optional
+  context source.
+
+- `install` is available only through the direct CLI or package bin. It adds
+  missing expected links without removing anything:
+
+  ```bash
+  agent-toolkit install --dry-run
+  ```
+
 - `--dry-run` previews changes without creating destination roots or mutating
   files.
+
 - `--home <path>` overrides the home directory, primarily for tests.
 
-Unmanaged files/directories, external links, links from a moved checkout, and
-separately managed resources are preserved. A conflict produces a nonzero exit
-rather than replacing content.
+Context ownership requires an exact link target of this checkout's
+`context/working-style.md`. Skill ownership remains limited to direct children
+of this checkout's `skills/` directory. Files, directories, external links,
+links from a moved checkout, and separately managed resources are preserved. A
+conflict produces a nonzero exit rather than replacing content.
 
 ## Web skill
 
@@ -154,7 +172,7 @@ Use the repository's mise tasks rather than selecting runtimes directly:
 ```bash
 mise run fmt              # Format repository-authored root and skill Markdown
 mise run typecheck        # Type-check Python and TypeScript
-mise run skills:validate  # Validate skill metadata and optional scope overrides
+mise run toolkit:validate # Validate skills, optional context, and scope overrides
 mise run test             # Run the Python and Bun suites
 mise run check            # Run the complete repository gate
 mise run hooks:install    # Explicitly install pre-commit hooks

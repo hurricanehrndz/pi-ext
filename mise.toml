@@ -28,24 +28,20 @@ run = "bun x tsc --noEmit"
 description = "Type-check everything (Python + TypeScript)"
 depends = ["typecheck:python", "typecheck:typescript"]
 
-[tasks."skills:validate"]
-description = "Validate Agent Skills metadata and optional scope overrides"
+[tasks."toolkit:validate"]
+description = "Validate managed toolkit resources and optional scope overrides"
 run = "bun scripts/agent-toolkit.ts validate"
 
-[tasks."skills:status"]
-description = "Show Agent Skill installation state"
+[tasks."toolkit:status"]
+description = "Show managed toolkit resource state"
 run = "bun scripts/agent-toolkit.ts status"
 
-[tasks."skills:install"]
-description = "Install missing Agent Skill links"
-run = "bun scripts/agent-toolkit.ts install"
-
-[tasks."skills:sync"]
-description = "Synchronize checkout-owned Agent Skill links"
+[tasks."toolkit:sync"]
+description = "Synchronize managed toolkit resources"
 run = "bun scripts/agent-toolkit.ts sync"
 
-[tasks."skills:uninstall"]
-description = "Remove Agent Skill links owned by this checkout"
+[tasks."toolkit:uninstall"]
+description = "Remove managed toolkit resources owned by this checkout"
 run = "bun scripts/agent-toolkit.ts uninstall"
 
 [tasks."test:python"]
@@ -59,7 +55,7 @@ run = "bun test --pass-with-no-tests"
 
 [tasks.check]
 description = "Full check: prek all-files + TypeScript typecheck + tests"
-depends = ["typecheck:typescript", "skills:validate", "test"]
+depends = ["typecheck:typescript", "toolkit:validate", "test"]
 run = "prek run --all-files"
 
 [tasks."hooks:install"]

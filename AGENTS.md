@@ -8,6 +8,8 @@ Skills.
 - `extensions/<name>/index.ts` is delivered through `package.json` →
   `pi.extensions` and runs only in Pi.
 - `skills/<name>/SKILL.md` is installed only by `scripts/agent-toolkit.ts`.
+- `context/working-style.md` is the optional global-context source. When it
+  exists, the installer manages one fixed link for every selected agent.
 - Every discovered skill defaults to Pi, Prime, Codex, and Claude.
   `agent-toolkit.json` is optional and lists only skills whose agent scope
   overrides that default.
@@ -30,14 +32,15 @@ explicit decision.
 | Formatting and hooks | treefmt and prek |
 
 Use `mise run setup`, `mise run fmt`, `mise run typecheck`, `mise run test`, and
-`mise run check` for repository work. Manage skill links with
-`mise run skills:validate|status|install|sync|uninstall`; pass installer options
-after `--`. Never use npm. Do not add runtime Python packages for the web
-helper; the root mypy/mdformat packages are development only. Pi peer packages
-provide types and must not be bundled. When intentionally refreshing Python
-dependencies, keep public resolution explicit with
-`UV_DEFAULT_INDEX=https://pypi.org/simple uv lock --python 3.14.7`, then inspect
-the lock before committing it.
+`mise run check` for repository work. Manage toolkit resources with
+`mise run toolkit:validate|status|sync|uninstall`; pass CLI options after `--`.
+`toolkit:sync` is the normal reconciler. Additive-only `install` remains a
+direct CLI/bin command and has no mise alias. Never use npm. Do not add runtime
+Python packages for the web helper; the root mypy/mdformat packages are
+development only. Pi peer packages provide types and must not be bundled. When
+intentionally refreshing Python dependencies, keep public resolution explicit
+with `UV_DEFAULT_INDEX=https://pypi.org/simple uv lock --python 3.14.7`, then
+inspect the lock before committing it.
 
 First-time repository setup is:
 
@@ -58,6 +61,8 @@ skills/
   <name>/
     SKILL.md
     scripts/
+context/
+  working-style.md         # optional global context for all selected agents
 agent-toolkit.json        # optional non-default skill scope overrides
 scripts/
   agent-toolkit.ts
@@ -76,16 +81,24 @@ Do not infer a non-default scope from a skill's contents.
 
 Keep installer behavior aligned with its ownership-safe design:
 
-- destinations are exactly `~/.pi/agent/skills`, `~/.prime/agent/skills`,
+- skill roots are exactly `~/.pi/agent/skills`, `~/.prime/agent/skills`,
   `~/.codex/skills`, and `~/.claude/skills`;
+- context destinations are exactly `~/.pi/agent/APPEND_SYSTEM.md`,
+  `~/.prime/agent/APPEND_SYSTEM.md`, `~/.codex/AGENTS.md`, and
+  `~/.claude/CLAUDE.md`;
 - install and status consider each selected agent's effective skill scope;
 - sync/uninstall remove only direct skill links targeting this checkout's
   `skills/` directory;
+- a context link is owned only when its target exactly equals this checkout's
+  resolved `context/working-style.md` path, including after source deletion;
+- an absent context source is valid and gives the checkout no global context to
+  install; an existing source must be a regular file, not a symlink;
 - preserve unmanaged files/directories, external and moved-checkout links,
   built-ins, and separately managed resources;
 - conflicts are nonzero and never replaced;
 - dry-run must not create roots or mutate anything;
-- config/frontmatter validation happens before mutation.
+- all config, frontmatter, and context-source validation happens before any
+  mutation.
 
 Add focused Bun tests for every ownership or scope change. Tests must use
 temporary homes, never real harness directories.
@@ -146,7 +159,7 @@ git diff --check
 ```
 
 Use the narrower `mise run fmt`, `mise run typecheck`,
-`mise run skills:validate`, and `mise run test` tasks while iterating.
+`mise run toolkit:validate`, and `mise run test` tasks while iterating.
 `mise run setup` installs only the Bun and uv lockfiles.
 `mise run hooks:install` is an explicit, separate mutation and must not be
 folded into setup or checks.

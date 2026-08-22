@@ -9,13 +9,20 @@ import { fileURLToPath } from "node:url";
 type Agent = "pi" | "prime" | "codex" | "claude";
 type Command = "install" | "sync" | "status" | "uninstall" | "validate";
 
-const AGENT_PATHS: Record<Agent, string> = {
+const AGENT_SKILL_PATHS: Record<Agent, string> = {
 	pi: ".pi/agent/skills",
 	prime: ".prime/agent/skills",
 	codex: ".codex/skills",
 	claude: ".claude/skills",
 };
-const ALL_AGENTS = Object.keys(AGENT_PATHS) as Agent[];
+const AGENT_CONTEXT_PATHS: Record<Agent, string> = {
+	pi: ".pi/agent/APPEND_SYSTEM.md",
+	prime: ".prime/agent/APPEND_SYSTEM.md",
+	codex: ".codex/AGENTS.md",
+	claude: ".claude/CLAUDE.md",
+};
+const CONTEXT_SOURCE_PATH = "context/working-style.md";
+const ALL_AGENTS = Object.keys(AGENT_SKILL_PATHS) as Agent[];
 const NAME_PATTERN = /^[a-z0-9]+(?:-[a-z0-9]+)*$/;
 
 interface Options {
@@ -41,10 +48,10 @@ function usage(): string {
 	return `Usage: agent-toolkit <command> [options]
 
 Commands:
-  validate                 Validate optional config and every skill's frontmatter
-  status                   Show scoped installation state for selected agents
-  install                  Link missing scoped skills without removing anything
-  sync                     Install scoped skills and remove stale checkout-owned links
+  validate                 Validate optional config, context, and skill frontmatter
+  status                   Show managed resource state for selected agents
+  install                  Link missing managed resources without removing anything
+  sync                     Reconcile resources and remove stale checkout-owned links
   uninstall                Remove links owned by this checkout
 
 Options:
@@ -404,6 +411,24 @@ function targetOfLink(path: string): string | undefined {
 	}
 }
 
+function validateContextSource(contextSource: string): { exists: boolean; errors: string[] } {
+	try {
+		if (!lstatSync(contextSource).isFile()) {
+			return { exists: true, errors: [`${CONTEXT_SOURCE_PATH}: must be a regular file`] };
+		}
+		return { exists: true, errors: [] };
+	} catch (error) {
+		if ((error as NodeJS.ErrnoException).code === "ENOENT") {
+			return { exists: false, errors: [] };
+		}
+		throw error;
+	}
+}
+
+function isOwnedContextLink(destination: string, contextSource: string): boolean {
+	return targetOfLink(destination) === contextSource;
+}
+
 function isWithin(path: string, parent: string): boolean {
 	const pathFromParent = relative(parent, path);
 	return pathFromParent !== ".." && !pathFromParent.startsWith(`..${sep}`) && !isAbsolute(pathFromParent);
@@ -454,11 +479,49 @@ function skillsForAgent(skills: Skill[], scopes: SkillScopes, agent: Agent): Ski
 	return skills.filter((skill) => scopes.get(skill.name)?.includes(agent) === true);
 }
 
-async function installOrSync(options: Options, skills: Skill[], scopes: SkillScopes, skillsRoot: string): Promise<Summary> {
+async function ensureContextLink(
+	contextSource: string,
+	destination: string,
+	dryRun: boolean,
+): Promise<"linked" | "present" | "conflict"> {
+	const currentTarget = targetOfLink(destination);
+	if (currentTarget === contextSource) {
+		return "present";
+	}
+	if (existsSync(destination) || currentTarget !== undefined) {
+		return "conflict";
+	}
+	if (!dryRun) {
+		await mkdir(dirname(destination), { recursive: true });
+		await symlink(contextSource, destination, "file");
+	}
+	return "linked";
+}
+
+async function removeOwnedContextLink(destination: string, contextSource: string, dryRun: boolean): Promise<number> {
+	if (!isOwnedContextLink(destination, contextSource)) {
+		return 0;
+	}
+	process.stdout.write(`remove context: ${destination}
+`);
+	if (!dryRun) {
+		await rm(destination);
+	}
+	return 1;
+}
+
+async function installOrSync(
+	options: Options,
+	skills: Skill[],
+	scopes: SkillScopes,
+	skillsRoot: string,
+	contextSource: string,
+	hasContext: boolean,
+): Promise<Summary> {
 	let changed = 0;
 	let conflicts = 0;
 	for (const agent of options.agents) {
-		const destinationRoot = join(options.home, AGENT_PATHS[agent]);
+		const destinationRoot = join(options.home, AGENT_SKILL_PATHS[agent]);
 		const scopedSkills = skillsForAgent(skills, scopes, agent);
 		process.stdout.write(`${agent}: ${destinationRoot}
 `);
@@ -477,14 +540,36 @@ async function installOrSync(options: Options, skills: Skill[], scopes: SkillSco
 		if (options.command === "sync") {
 			changed += await removeStaleLinks(destinationRoot, scopedSkills, skillsRoot, options.dryRun);
 		}
+
+		const contextDestination = join(options.home, AGENT_CONTEXT_PATHS[agent]);
+		if (hasContext) {
+			const result = await ensureContextLink(contextSource, contextDestination, options.dryRun);
+			if (result === "linked") {
+				process.stdout.write(`  link context: ${contextDestination}
+`);
+				changed += 1;
+			} else if (result === "conflict") {
+				process.stderr.write(`  conflict context: ${contextDestination} already exists
+`);
+				conflicts += 1;
+			}
+		} else if (options.command === "sync") {
+			changed += await removeOwnedContextLink(contextDestination, contextSource, options.dryRun);
+		}
 	}
 	return { changed, conflicts };
 }
 
-async function showStatus(options: Options, skills: Skill[], scopes: SkillScopes): Promise<Summary> {
+async function showStatus(
+	options: Options,
+	skills: Skill[],
+	scopes: SkillScopes,
+	contextSource: string,
+	hasContext: boolean,
+): Promise<Summary> {
 	let conflicts = 0;
 	for (const agent of options.agents) {
-		const destinationRoot = join(options.home, AGENT_PATHS[agent]);
+		const destinationRoot = join(options.home, AGENT_SKILL_PATHS[agent]);
 		let linked = 0;
 		let missing = 0;
 		let agentConflicts = 0;
@@ -502,29 +587,45 @@ async function showStatus(options: Options, skills: Skill[], scopes: SkillScopes
 		conflicts += agentConflicts;
 		process.stdout.write(`${agent}: ${linked} linked, ${missing} missing, ${agentConflicts} conflicts (${destinationRoot})
 `);
+		if (hasContext) {
+			const contextDestination = join(options.home, AGENT_CONTEXT_PATHS[agent]);
+			const target = targetOfLink(contextDestination);
+			let state: "linked" | "missing" | "conflict";
+			if (target === contextSource) {
+				state = "linked";
+			} else if (!existsSync(contextDestination) && target === undefined) {
+				state = "missing";
+			} else {
+				state = "conflict";
+				conflicts += 1;
+			}
+			process.stdout.write(`  context: ${state} (${contextDestination})
+`);
+		}
 	}
 	return { changed: 0, conflicts };
 }
 
-async function uninstall(options: Options, skillsRoot: string): Promise<Summary> {
+async function uninstall(options: Options, skillsRoot: string, contextSource: string): Promise<Summary> {
 	let changed = 0;
 	for (const agent of options.agents) {
-		const destinationRoot = join(options.home, AGENT_PATHS[agent]);
-		if (!existsSync(destinationRoot)) {
-			continue;
-		}
-		for (const entry of readdirSync(destinationRoot)) {
-			const path = join(destinationRoot, entry);
-			if (!isManagedLink(path, skillsRoot)) {
-				continue;
-			}
-			process.stdout.write(`remove ${agent}/${entry}
+		const destinationRoot = join(options.home, AGENT_SKILL_PATHS[agent]);
+		if (existsSync(destinationRoot)) {
+			for (const entry of readdirSync(destinationRoot)) {
+				const path = join(destinationRoot, entry);
+				if (!isManagedLink(path, skillsRoot)) {
+					continue;
+				}
+				process.stdout.write(`remove ${agent}/${entry}
 `);
-			if (!options.dryRun) {
-				await rm(path);
+				if (!options.dryRun) {
+					await rm(path);
+				}
+				changed += 1;
 			}
-			changed += 1;
 		}
+		const contextDestination = join(options.home, AGENT_CONTEXT_PATHS[agent]);
+		changed += await removeOwnedContextLink(contextDestination, contextSource, options.dryRun);
 	}
 	return { changed, conflicts: 0 };
 }
@@ -537,6 +638,9 @@ export async function run(argv: string[], repoRoot = resolve(dirname(fileURLToPa
 		const validationErrors = await validateSkills(skillsRoot);
 		const config = await loadConfig(join(repoRoot, "agent-toolkit.json"), skills);
 		validationErrors.push(...config.errors);
+		const contextSource = resolve(repoRoot, CONTEXT_SOURCE_PATH);
+		const context = validateContextSource(contextSource);
+		validationErrors.push(...context.errors);
 		if (validationErrors.length > 0) {
 			for (const error of validationErrors) {
 				process.stderr.write(`error: ${error}
@@ -552,11 +656,11 @@ export async function run(argv: string[], repoRoot = resolve(dirname(fileURLToPa
 
 		let summary: Summary;
 		if (options.command === "status") {
-			summary = await showStatus(options, skills, config.scopes);
+			summary = await showStatus(options, skills, config.scopes, contextSource, context.exists);
 		} else if (options.command === "uninstall") {
-			summary = await uninstall(options, skillsRoot);
+			summary = await uninstall(options, skillsRoot, contextSource);
 		} else {
-			summary = await installOrSync(options, skills, config.scopes, skillsRoot);
+			summary = await installOrSync(options, skills, config.scopes, skillsRoot, contextSource, context.exists);
 		}
 		if (options.dryRun && summary.changed > 0) {
 			process.stdout.write(`Dry run: ${summary.changed} change(s) would be made.
