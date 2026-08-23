@@ -6,7 +6,17 @@
     "strict": true,
     "noUncheckedIndexedAccess": true,
     "skipLibCheck": true,
-    "types": ["bun"]
+    "types": [
+      "bun"
+    ],
+    "allowJs": true,
+    "checkJs": true
   },
-  "include": ["extensions/**/*.ts", "scripts/**/*.ts", "skills/**/*.ts"]
+  "include": [
+    "extensions/**/*.ts",
+    "scripts/**/*.ts",
+    "skills/**/*.ts",
+    "skills/**/*.mjs",
+    "scripts/**/*.mjs"
+  ]
 }

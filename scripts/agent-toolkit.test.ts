@@ -5,7 +5,7 @@ import { tmpdir } from "node:os";
 import { createServer } from "node:net";
 import { dirname, join, relative, resolve } from "node:path";
 
-import { run } from "./agent-toolkit";
+import { run } from "./agent-toolkit.mjs";
 
 let sandbox: string;
 let repoRoot: string;
@@ -568,7 +568,8 @@ describe("package ownership", () => {
 
 	test("the repository package exposes the installer and does not also deliver Pi skills", async () => {
 		const manifest = await Bun.file(join(import.meta.dir, "../package.json")).json();
-		expect(manifest.bin).toEqual({ "agent-toolkit": "./scripts/agent-toolkit.ts" });
+		expect(manifest.bin).toEqual({ "agent-toolkit": "./scripts/agent-toolkit.mjs" });
+		expect(manifest.engines).toEqual({ node: ">=24.14.1" });
 		expect(manifest.pi.extensions).toEqual(["./extensions"]);
 		expect(manifest.pi.skills).toBeUndefined();
 	});

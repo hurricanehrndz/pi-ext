@@ -22,7 +22,22 @@
     "@types/bun": "1.3.13",
     "markdownlint-cli": "0.41.0"
   },
+  "files": [
+    "agent-toolkit.json",
+    "context/",
+    "extensions/",
+    "prompts/",
+    "skills/",
+    "scripts/agent-toolkit.mjs",
+    "!**/__pycache__/**",
+    "!**/*.pyc",
+    "!**/*_test.py",
+    "!**/*.test.*"
+  ],
   "bin": {
-    "agent-toolkit": "./scripts/agent-toolkit.ts"
+    "agent-toolkit": "./scripts/agent-toolkit.mjs"
+  },
+  "engines": {
+    "node": ">=24.14.1"
   }
 }

@@ -1,14 +1,15 @@
 # agent-toolkit
 
 A one-stop shop for [pi.dev](https://pi.dev) extensions, portable Agent Skills,
-and personal global agent context, built with [Bun](https://bun.sh).
+and personal global agent context. The production installer runs on Node 24; Bun
+remains the development test runner.
 
 ## Resources and ownership
 
 | Resource | Delivery | Scope |
 | -- | -- | -- |
 | `extensions/` | The `agent-toolkit` Pi package (`package.json` → `pi.extensions`) | Pi only |
-| `skills/` | Per-skill symlinks managed only by `scripts/agent-toolkit.ts`; optional `agent-toolkit.json` overrides the default scope | All four agents by default, with per-skill exceptions |
+| `skills/` | Per-skill symlinks managed only by `scripts/agent-toolkit.mjs`; optional `agent-toolkit.json` overrides the default scope | All four agents by default, with per-skill exceptions |
 | `context/working-style.md` | One fixed global-context symlink per agent, managed by the same CLI | All four agents when the source file exists |
 | `prompts/` | Not delivered by the current package manifest or installer | Manual/separate decision |
 
@@ -48,8 +49,9 @@ intentionally absent from package and installer delivery.
   development environment.
 - [uv](https://docs.astral.sh/uv/) for the executable web helper, which is
   pinned to CPython 3.14.7 and otherwise uses only the standard library.
-- [Bun](https://bun.sh) 1.3.13 for TypeScript tooling and the skill installer
-  (installed by mise for development).
+- [Node.js](https://nodejs.org) 24.14.1 for the dependency-free skill installer.
+- [Bun](https://bun.sh) 1.3.13 for development dependencies, TypeScript tooling,
+  tests, and personal Pi extensions.
 - [Pi](https://pi.dev), when using the Pi-only extensions or `subagent` skill.
 - `obsidian`, when using `obsidian-cli`.
 - `gh`, when the web skill reads recognized GitHub URLs.
@@ -119,7 +121,7 @@ mise run toolkit:uninstall -- --agent claude --dry-run
 ```
 
 The executable and package bin provide the full CLI when mise is unavailable:
-`./scripts/agent-toolkit.ts <command> [options]` or
+`./scripts/agent-toolkit.mjs <command> [options]` or
 `agent-toolkit <command> [options]`.
 
 - `sync` reconciles skills and optional context. It removes only links owned by
@@ -198,7 +200,10 @@ Extensions remain Pi-only package resources.
 ### Add or change a skill
 
 1. Create `skills/<name>/SKILL.md` with Agent Skills frontmatter whose `name`
-   matches the directory.
+   matches the directory. Frontmatter is a flat mapping with unindented plain
+   keys and plain, single- or double-quoted scalar values. Comments,
+   collections, block values, tags, anchors, aliases, duplicate keys, and
+   ambiguous unquoted colons are rejected.
 1. Put helpers under `skills/<name>/scripts/` and use relative invocations in
    the skill documentation.
 1. Leave an all-agent skill out of `agent-toolkit.json`. Add an override only
@@ -210,8 +215,9 @@ Extensions remain Pi-only package resources.
 
 | Tool | Role |
 | -- | -- |
-| Bun | Installer runtime, package manager, TypeScript test runner |
-| TypeScript | Pi extensions and the installer |
+| Node.js 24.14.1 | Dependency-free installer runtime |
+| Bun 1.3.13 | Development package manager and TypeScript test runner |
+| TypeScript | Pi extensions and development tests |
 | Python standard library | Portable web helper |
 | Agent Skills | Cross-harness skill format |
 

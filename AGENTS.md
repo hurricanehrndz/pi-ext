@@ -7,7 +7,7 @@ Skills.
 
 - `extensions/<name>/index.ts` is delivered through `package.json` →
   `pi.extensions` and runs only in Pi.
-- `skills/<name>/SKILL.md` is installed only by `scripts/agent-toolkit.ts`.
+- `skills/<name>/SKILL.md` is installed only by `scripts/agent-toolkit.mjs`.
 - `context/working-style.md` is the optional global-context source. When it
   exists, the installer manages one fixed link for every selected agent.
 - Every discovered skill defaults to Pi, Prime, Codex, and Claude.
@@ -25,7 +25,8 @@ explicit decision.
 
 | Concern | Tool |
 | -- | -- |
-| TypeScript runtime/package manager/tests | Bun 1.3.13 |
+| Production installer runtime | Node.js 24.14.1 |
+| Development package manager/tests | Bun 1.3.13 |
 | Portable web helper | CPython 3.14.7 standard library, selected by its executable uv-script entry point |
 | Development tasks | mise (`mise run …`) with `settings.locked = true` |
 | Python development dependencies | uv with the root `pyproject.toml` and `uv.lock` |
@@ -35,7 +36,8 @@ Use `mise run setup`, `mise run fmt`, `mise run typecheck`, `mise run test`, and
 `mise run check` for repository work. Manage toolkit resources with
 `mise run toolkit:validate|status|sync|uninstall`; pass CLI options after `--`.
 `toolkit:sync` is the normal reconciler. Additive-only `install` remains a
-direct CLI/bin command and has no mise alias. Never use npm. Do not add runtime
+direct CLI/bin command and has no mise alias. Use npm only for local package/bin
+smoke tests; never add an installer runtime dependency. Do not add runtime
 Python packages for the web helper; the root mypy/mdformat packages are
 development only. Pi peer packages provide types and must not be bundled. When
 intentionally refreshing Python dependencies, keep public resolution explicit
@@ -65,7 +67,7 @@ context/
   working-style.md         # optional global context for all selected agents
 agent-toolkit.json        # optional non-default skill scope overrides
 scripts/
-  agent-toolkit.ts
+  agent-toolkit.mjs
 ```
 
 Every extension has a default-exported `ExtensionAPI` factory. Every skill has
@@ -100,8 +102,9 @@ Keep installer behavior aligned with its ownership-safe design:
 - all config, frontmatter, and context-source validation happens before any
   mutation.
 
-Add focused Bun tests for every ownership or scope change. Tests must use
-temporary homes, never real harness directories.
+Add focused Bun tests for every ownership or scope change. Keep the production
+`.mjs` dependency-free and covered by direct Node and packed-bin smoke tests.
+Tests must use temporary homes, never real harness directories.
 
 ## Python web helper
 
@@ -160,9 +163,9 @@ git diff --check
 
 Use the narrower `mise run fmt`, `mise run typecheck`,
 `mise run toolkit:validate`, and `mise run test` tasks while iterating.
-`mise run setup` installs only the Bun and uv lockfiles.
-`mise run hooks:install` is an explicit, separate mutation and must not be
-folded into setup or checks.
+`mise run setup` installs only the Bun and uv lockfiles; mise separately pins
+the Node production runtime. `mise run hooks:install` is an explicit, separate
+mutation and must not be folded into setup or checks.
 
 Do not use live Pi sessions or real harness homes for automated checks.
 
