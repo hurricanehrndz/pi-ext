@@ -1,5 +1,6 @@
 {
   "skills": {
+    "review": ["pi"],
     "subagent": ["pi"]
   }
 }

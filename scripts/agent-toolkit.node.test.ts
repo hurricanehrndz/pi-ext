@@ -128,7 +128,7 @@ console.log(JSON.stringify(normalized));`,
 		const report = JSON.parse(packed.stdout) as Array<{ files: Array<{ path: string }> }>;
 		const paths = report[0]!.files.map((file) => file.path).sort();
 		const allowedExact = new Set(["LICENSE", "README.md", "agent-toolkit.json", "package.json", "scripts/agent-toolkit.mjs"]);
-		const allowedPrefixes = ["context/", "extensions/", "prompts/", "skills/"];
+		const allowedPrefixes = ["context/", "extensions/", "skills/"];
 		for (const path of paths) {
 			expect(allowedExact.has(path) || allowedPrefixes.some((prefix) => path.startsWith(prefix)), path).toBeTrue();
 			expect(path).not.toMatch(/(?:^|\/)\.tmp(?:\/|$)|(?:^|\/)node_modules(?:\/|$)|__pycache__|\.pyc$|(?:^|\/)(?:tests?|[^/]*[._-]test)(?:[._/-]|$)/);
@@ -137,14 +137,13 @@ console.log(JSON.stringify(normalized));`,
 		expect(paths).toContain("agent-toolkit.json");
 		expect(paths.some((path) => path.startsWith("context/"))).toBeTrue();
 		expect(paths.some((path) => path.startsWith("extensions/"))).toBeTrue();
-		expect(paths.some((path) => path.startsWith("prompts/"))).toBeTrue();
 		expect(paths.some((path) => path.startsWith("skills/"))).toBeTrue();
 		expect(paths).toContain("context/working-style.md");
 		expect(paths).toContain("extensions/system-prompt/index.ts");
 		expect(paths).toContain("extensions/protected-paths/index.ts");
 		expect(paths).toContain("extensions/custom-footer/index.ts");
 		expect(paths).toContain("extensions/custom-footer/renderers.ts");
-		expect(paths).toContain("prompts/review.md");
+		expect(paths).toContain("skills/review/SKILL.md");
 		expect(paths).toContain("skills/web/scripts/web");
 		expect(paths).toContain("skills/writing-for-agents/SKILL-MECHANICS.md");
 	});

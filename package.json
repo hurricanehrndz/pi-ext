@@ -26,7 +26,6 @@
     "agent-toolkit.json",
     "context/",
     "extensions/",
-    "prompts/",
     "skills/",
     "scripts/agent-toolkit.mjs",
     "!**/__pycache__/**",

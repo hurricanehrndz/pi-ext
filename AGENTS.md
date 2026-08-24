@@ -13,8 +13,6 @@ Skills.
 - Every discovered skill defaults to Pi, Prime, Codex, and Claude.
   `agent-toolkit.json` is optional and lists only skills whose agent scope
   overrides that default.
-- `prompts/review.md` is retained but is not currently delivered. Do not add
-  prompt delivery incidentally.
 - Do not add `pi.skills`; the cross-agent installer must remain the sole owner
   of Pi skill links.
 

@@ -12,14 +12,6 @@ repos:
         entry: mise exec -- bun x markdownlint --config .markdownlint.jsonc
         language: system
         files: \.md$
-        exclude: ^prompts/
-        require_serial: true
-      # Prompt templates begin with executable instructions rather than titles.
-      - id: markdownlint-prompts
-        name: markdownlint prompt templates
-        entry: mise exec -- bun x markdownlint --config .markdownlint.jsonc --disable MD041 --
-        language: system
-        files: ^prompts/.*\.md$
         require_serial: true
       - id: mypy-skill-scripts
         name: mypy skill Python scripts

@@ -11,7 +11,6 @@ remains the development test runner.
 | `extensions/` | The `agent-toolkit` Pi package (`package.json` → `pi.extensions`) | Pi only |
 | `skills/` | Per-skill symlinks managed only by `scripts/agent-toolkit.mjs`; optional `agent-toolkit.json` overrides the default scope | All four agents by default, with per-skill exceptions |
 | `context/working-style.md` | One fixed global-context symlink per agent, managed by the same CLI | All four agents when the source file exists |
-| `prompts/` | Not delivered by the current package manifest or installer | Manual/separate decision |
 
 The package and installer deliberately do not both own Pi skill installation.
 
@@ -29,19 +28,15 @@ The package and installer deliberately do not both own Pi skill installation.
 | -- | -- | -- |
 | [bro](skills/bro/SKILL.md) | Pi, Prime, Codex, Claude | Restates the previous message in concise, jargon-free language |
 | [obsidian-cli](skills/obsidian-cli/SKILL.md) | Pi, Prime, Codex, Claude | Reads, searches, and safely edits the primary Obsidian vault |
+| [review](skills/review/SKILL.md) | Pi | Runs an explicitly invoked, read-only subagent review of the current branch |
 | [subagent](skills/subagent/SKILL.md) | Pi | Spawns an isolated Pi process for delegated work |
 | [unslop](skills/unslop/SKILL.md) | Pi, Prime, Codex, Claude | Removes common AI-writing patterns and adds a more human voice |
 | [web](skills/web/SKILL.md) | Pi, Prime, Codex, Claude | Explicit-consent static web search and URL-to-Markdown extraction |
 | [writing-for-agents](skills/writing-for-agents/SKILL.md) | Pi, Prime, Codex, Claude | Writes and reviews concise, effective documents intended for agents |
 
 Every discovered skill defaults to all four agents. The optional
-`agent-toolkit.json` contains only exceptions; here it narrows `subagent` to Pi.
-Unlisted skills keep the all-agent default.
-
-### Prompt
-
-`prompts/review.md` is retained as a reusable review prompt, but remains
-intentionally absent from package and installer delivery.
+`agent-toolkit.json` contains only exceptions; here it narrows `review` and
+`subagent` to Pi. Unlisted skills keep the all-agent default.
 
 ## Prerequisites
 
@@ -52,7 +47,8 @@ intentionally absent from package and installer delivery.
 - [Node.js](https://nodejs.org) 24.14.1 for the dependency-free skill installer.
 - [Bun](https://bun.sh) 1.3.13 for development dependencies, TypeScript tooling,
   tests, and personal Pi extensions.
-- [Pi](https://pi.dev), when using the Pi-only extensions or `subagent` skill.
+- [Pi](https://pi.dev), when using the Pi-only extensions or the `review` and
+  `subagent` skills.
 - `obsidian`, when using `obsidian-cli`.
 - `gh`, when the web skill reads recognized GitHub URLs.
 - `html2markdown`, only for the web skill's ordinary static-HTML conversion
