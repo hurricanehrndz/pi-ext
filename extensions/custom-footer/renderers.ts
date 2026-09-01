@@ -6,7 +6,7 @@
  */
 
 import type { SessionEntry, ThemeColor } from "@earendil-works/pi-coding-agent";
-import { visibleWidth } from "@earendil-works/pi-tui";
+import { truncateToWidth, visibleWidth } from "@earendil-works/pi-tui";
 
 // ── Tokens ─────────────────────────────────────────────────────────────
 
@@ -40,16 +40,65 @@ export function renderPath(pathRaw: string, budget: number, theme: FooterTheme):
 	return theme.fg("warning", "…" + pathRaw.slice(-(budget - 1)));
 }
 
-// ── Cost ───────────────────────────────────────────────────────────────
+export function composeFooterLine(
+	left: string,
+	right: string,
+	separator: string,
+	width: number,
+): string {
+	if (width <= 0) return "";
+
+	if (!right) return truncateToWidth(left, width);
+
+	const rightDisplay = truncateToWidth(right, width);
+	const rightWidth = visibleWidth(rightDisplay);
+	const separatorWidth = visibleWidth(separator);
+	const leftBudget = width - rightWidth - separatorWidth;
+
+	if (!left || leftBudget <= 0) {
+		return " ".repeat(Math.max(0, width - rightWidth)) + rightDisplay;
+	}
+
+	const leftDisplay = truncateToWidth(left, leftBudget);
+	const padding = Math.max(
+		0,
+		width - visibleWidth(leftDisplay) - separatorWidth - rightWidth,
+	);
+	return leftDisplay + separator + " ".repeat(padding) + rightDisplay;
+}
+
+// ── Session Usage ──────────────────────────────────────────────────────
+
+export type SessionUsageStats = {
+	cost: number;
+	cacheRead: number;
+	cacheWrite: number;
+	cacheHitRate: number | null;
+};
+
+export function getSessionUsageStats(entries: readonly SessionEntry[]): SessionUsageStats {
+	let cost = 0;
+	let cacheRead = 0;
+	let cacheWrite = 0;
+	let cacheHitRate: number | null = null;
+
+	for (const entry of entries) {
+		if (entry.type !== "message" || entry.message.role !== "assistant") continue;
+
+		const usage = entry.message.usage;
+		cost += usage.cost.total;
+		cacheRead += usage.cacheRead;
+		cacheWrite += usage.cacheWrite;
+
+		const promptTokens = usage.input + usage.cacheRead + usage.cacheWrite;
+		cacheHitRate = promptTokens > 0 ? (usage.cacheRead / promptTokens) * 100 : null;
+	}
+
+	return { cost, cacheRead, cacheWrite, cacheHitRate };
+}
 
 export function getSessionCost(entries: readonly SessionEntry[]): number {
-	let total = 0;
-	for (const entry of entries) {
-		if (entry.type === "message" && entry.message.role === "assistant") {
-			total += entry.message.usage.cost.total;
-		}
-	}
-	return total;
+	return getSessionUsageStats(entries).cost;
 }
 
 export function renderCost(cost: number, theme: FooterTheme): { text: string; rawWidth: number } {
@@ -57,16 +106,32 @@ export function renderCost(cost: number, theme: FooterTheme): { text: string; ra
 	return { text: theme.fg("muted", raw), rawWidth: visibleWidth(raw) };
 }
 
+export function renderCacheUsage(
+	stats: SessionUsageStats,
+	theme: FooterTheme,
+): { text: string; rawWidth: number } {
+	const parts: string[] = [];
+	if (stats.cacheRead > 0) parts.push(`R${fmtTokens(stats.cacheRead)}`);
+	if (stats.cacheWrite > 0) parts.push(`W${fmtTokens(stats.cacheWrite)}`);
+	if ((stats.cacheRead > 0 || stats.cacheWrite > 0) && stats.cacheHitRate !== null) {
+		parts.push(`CH${stats.cacheHitRate.toFixed(1)}%`);
+	}
+
+	const raw = parts.join(" ");
+	return { text: theme.fg("muted", raw), rawWidth: visibleWidth(raw) };
+}
+
 // ── Context Usage ──────────────────────────────────────────────────────
 
 export function renderContextUsage(
-	pct: number,
+	pct: number | null,
 	win: number,
 	theme: FooterTheme,
 ): { text: string; rawWidth: number } {
-	const raw = `${pct.toFixed(0)}%/${fmtTokens(win)}`;
+	const raw = pct === null ? `?/${fmtTokens(win)}` : `${pct.toFixed(0)}%/${fmtTokens(win)}`;
 	let text: string;
-	if (pct > 90) text = theme.fg("error", raw);
+	if (pct === null) text = theme.fg("muted", raw);
+	else if (pct > 90) text = theme.fg("error", raw);
 	else if (pct > 70) text = theme.fg("warning", raw);
 	else text = theme.fg("success", raw);
 	return { text, rawWidth: visibleWidth(raw) };

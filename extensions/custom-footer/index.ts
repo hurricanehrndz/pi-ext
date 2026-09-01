@@ -3,17 +3,18 @@
  *
  * Renders a single compact powerline-style footer line:
  *
- *   ~/path/to/project (main) │ 12%/200k │ $0.123 │ ⚡ claude-opus-4-5 (anthropic) • low
+ *   ⚡ claude-opus-4-5 (anthropic) • low │ 12%/200k │ $0.123 │ ~/path (main) │     R120k W8.2k CH84.3%
  *
  * Uses ctx.ui.setFooter() so it replaces the default pi footer.
  * Git branch is sourced from footerData.getGitBranch() (reactive via onBranchChange).
  */
 
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
-import { truncateToWidth } from "@earendil-works/pi-tui";
 import {
 	buildPathString,
-	getSessionCost,
+	composeFooterLine,
+	getSessionUsageStats,
+	renderCacheUsage,
 	renderContextUsage,
 	renderCost,
 	renderModelInfo,
@@ -39,12 +40,14 @@ export default function (pi: ExtensionAPI) {
 
 					// Context usage
 					const usage = ctx.getContextUsage();
-					const pct = usage?.percent ?? 0;
+					const pct = usage?.percent === null ? null : (usage?.percent ?? 0);
 					const win = usage?.contextWindow ?? ctx.model?.contextWindow ?? 0;
 					const ctxInfo = renderContextUsage(pct, win, theme);
 
-					// Cumulative cost across the whole session, including abandoned branches
-					const costInfo = renderCost(getSessionCost(ctx.sessionManager.getEntries()), theme);
+					// Cumulative stats across the whole session, including abandoned branches
+					const sessionStats = getSessionUsageStats(ctx.sessionManager.getEntries());
+					const cacheInfo = renderCacheUsage(sessionStats, theme);
+					const costInfo = renderCost(sessionStats.cost, theme);
 
 					// Model + thinking
 					const modelId = ctx.model?.id ?? "no-model";
@@ -52,19 +55,21 @@ export default function (pi: ExtensionAPI) {
 					const thinking = pi.getThinkingLevel();
 					const modelInfo = renderModelInfo(modelId, provider, thinking, theme);
 
-					// Budget path to fill remaining space
-					const rightW = ctxInfo.rawWidth + sepW + costInfo.rawWidth + sepW + modelInfo.rawWidth;
-					const pathBudget = width - rightW - sepW;
-					const pathDisplay = renderPath(pathRaw, pathBudget, theme);
-
-					// Assemble segments
-					const parts: string[] = [];
-					if (pathDisplay) parts.push(pathDisplay);
-					parts.push(ctxInfo.text);
-					parts.push(costInfo.text);
-					parts.push(modelInfo.text);
-
-					return [truncateToWidth(parts.join(sep), width)];
+					const leftParts = [modelInfo, ctxInfo, costInfo];
+					const fixedLeftW =
+						leftParts.reduce((total, part) => total + part.rawWidth, 0) +
+						sepW * (leftParts.length - 1);
+					const groupSepW = cacheInfo.rawWidth > 0 ? sepW : 0;
+					const pathDisplay = renderPath(
+						pathRaw,
+						width - fixedLeftW - cacheInfo.rawWidth - groupSepW - sepW,
+						theme,
+					);
+					const leftDisplay = [
+						...leftParts.map((part) => part.text),
+						...(pathDisplay ? [pathDisplay] : []),
+					].join(sep);
+					return [composeFooterLine(leftDisplay, cacheInfo.text, sep, width)];
 				},
 			};
 		});
